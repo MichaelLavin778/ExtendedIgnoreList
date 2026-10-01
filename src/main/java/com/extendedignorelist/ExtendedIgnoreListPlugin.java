@@ -97,13 +97,17 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private SessionManager sessionManager;
 
     private final Map<String, IgnoredPlayer> ignoredPlayers = new LinkedHashMap<>();
+    private final Set<String> ignoredNameIndex = new HashSet<>();
 
     private NavigationButton navigationButton;
     private ExtendedIgnoreListPanel panel;
+    private ExtendedIgnoreListConfig activeConfig;
     private boolean addIgnoreMenuRegistered;
+    private boolean drawListenerRegistered;
     private int pendingNativeIgnoreImportTicks;
     private int pendingNativeIgnoreRemovalTicks;
     private final Set<String> previousNativeIgnoreNames = new HashSet<>();
+    private String nativeIgnoreFingerprint;
     private final Set<String> nativeIgnoreNamesBeforeAddAttempt = new HashSet<>();
     private boolean nativeAddObserved;
     private String pendingNativeAddFallbackName;
@@ -129,11 +133,12 @@ public class ExtendedIgnoreListPlugin extends Plugin
     protected void startUp()
     {
         migratePlayerMenuOptionKey();
+        activeConfig = provideConfig();
         loadIgnoredPlayersForCurrentSession();
         panel = new ExtendedIgnoreListPanel(this::handleImportIgnoreList, this::handlePanelRemovePlayer, this::updatePlayerNote);
         refreshPanelPlayers();
         syncAddIgnoreMenuItem();
-        renderCallbackManager.register(drawListener);
+        syncDrawListener();
 
         navigationButton = NavigationButton.builder()
             .tooltip("Extended Ignore List")
@@ -148,7 +153,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
     @Override
     protected void shutDown()
     {
-        renderCallbackManager.unregister(drawListener);
+        if (drawListenerRegistered)
+        {
+            renderCallbackManager.unregister(drawListener);
+            drawListenerRegistered = false;
+        }
         removeAddIgnoreMenuItem();
 
         if (navigationButton != null)
@@ -158,7 +167,9 @@ public class ExtendedIgnoreListPlugin extends Plugin
         }
 
         panel = null;
+        activeConfig = null;
         ignoredPlayers.clear();
+        ignoredNameIndex.clear();
     }
 
     public void addIgnoredPlayer(String playerName)
@@ -182,6 +193,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
         trackedPlayer.setCurrentName(playerName);
         trackedPlayer.addAlias(playerName);
         ignoredPlayers.put(normalizedName, trackedPlayer);
+        nativeIgnoreFingerprint = null;
         persistIgnoredPlayers();
         refreshPanelPlayers();
     }
@@ -194,6 +206,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (ignoredPlayer != null)
         {
             ignoredPlayers.entrySet().removeIf(entry -> entry.getValue() == ignoredPlayer);
+            nativeIgnoreFingerprint = null;
             persistIgnoredPlayers();
             refreshPanelPlayers();
         }
@@ -234,7 +247,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private boolean shouldDraw(net.runelite.api.Renderable renderable, boolean drawingUI)
     {
-        if (!provideConfig().hidePlayers() || !(renderable instanceof net.runelite.api.Player))
+        if (!(renderable instanceof net.runelite.api.Player))
         {
             return true;
         }
@@ -249,6 +262,22 @@ public class ExtendedIgnoreListPlugin extends Plugin
         return !isIgnoredPlayerNameFast(playerName);
     }
 
+    private void syncDrawListener()
+    {
+        ExtendedIgnoreListConfig config = activeConfig == null ? provideConfig() : activeConfig;
+        boolean shouldRegister = config.hidePlayers();
+        if (shouldRegister && !drawListenerRegistered)
+        {
+            renderCallbackManager.register(drawListener);
+            drawListenerRegistered = true;
+        }
+        else if (!shouldRegister && drawListenerRegistered)
+        {
+            renderCallbackManager.unregister(drawListener);
+            drawListenerRegistered = false;
+        }
+    }
+
     @Subscribe
     public void onConfigChanged(ConfigChanged event)
     {
@@ -260,6 +289,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (PLAYER_MENU_OPTION_KEY.equals(event.getKey()))
         {
             syncAddIgnoreMenuItem();
+        }
+
+        if ("hidePlayers".equals(event.getKey()))
+        {
+            syncDrawListener();
         }
     }
 
@@ -347,16 +381,26 @@ public class ExtendedIgnoreListPlugin extends Plugin
     public void onSessionClose(SessionClose sessionClose)
     {
         ignoredPlayers.clear();
+        ignoredNameIndex.clear();
+        nativeIgnoreFingerprint = null;
+        previousNativeIgnoreNames.clear();
         refreshPanelPlayers();
     }
 
     @Subscribe
     public void onGameTick(GameTick gameTick)
     {
-        syncIgnoredPlayersWithNativeContainer();
-        syncPendingNativeIgnoreActions();
-        updateNativeIgnoreSnapshot();
-        refreshImportButtonState();
+        boolean nativeChanged = syncIgnoredPlayersWithNativeContainer();
+        boolean pendingActionActive = pendingNativeIgnoreImportTicks > 0 || pendingNativeIgnoreRemovalTicks > 0;
+        boolean pendingChanged = syncPendingNativeIgnoreActions();
+        if (nativeChanged || pendingActionActive)
+        {
+            updateNativeIgnoreSnapshot();
+        }
+        if (nativeChanged || pendingChanged)
+        {
+            refreshPanelPlayers();
+        }
     }
 
     @Subscribe
@@ -430,18 +474,18 @@ public class ExtendedIgnoreListPlugin extends Plugin
         refreshPanelPlayers();
     }
 
-    private void importMissingNativeIgnores()
+    private boolean importMissingNativeIgnores()
     {
         NameableContainer<Ignore> ignoreContainer = client.getIgnoreContainer();
         if (ignoreContainer == null)
         {
-            return;
+            return false;
         }
 
         Ignore[] members = ignoreContainer.getMembers();
         if (members == null || members.length == 0)
         {
-            return;
+            return false;
         }
 
         boolean changed = false;
@@ -477,8 +521,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
         if (changed)
         {
+            nativeIgnoreFingerprint = null;
             persistIgnoredPlayers();
         }
+
+        return changed;
     }
 
     private void refreshPanelPlayers()
@@ -489,6 +536,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private void updatePanelPlayers()
     {
+        rebuildIgnoredNameIndex();
         if (panel != null)
         {
             panel.setPlayers(getIgnoredPlayers());
@@ -577,6 +625,9 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private void loadIgnoredPlayersForCurrentSession()
     {
         ignoredPlayers.clear();
+        ignoredNameIndex.clear();
+        nativeIgnoreFingerprint = null;
+        previousNativeIgnoreNames.clear();
 
         String accountStorageKey = getAccountStorageKey();
         if (accountStorageKey == null)
@@ -667,6 +718,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
         {
             ignoredPlayers.put(normalizeName(player.getCurrentName()), player);
         }
+
+        rebuildIgnoredNameIndex();
 
         persistIgnoredPlayers();
         configManager.unsetConfiguration(CONFIG_GROUP, IGNORED_PLAYERS_CONFIG_KEY);
@@ -847,12 +900,13 @@ public class ExtendedIgnoreListPlugin extends Plugin
         return groupId == InterfaceID.IGNORE || groupId == InterfaceID.GIM_SIDEPANEL;
     }
 
-    private void syncPendingNativeIgnoreActions()
+    private boolean syncPendingNativeIgnoreActions()
     {
+        boolean changed = false;
         if (pendingNativeIgnoreImportTicks > 0)
         {
             capturePendingNativeAddNameCandidate();
-            importMissingNativeIgnores();
+            changed |= importMissingNativeIgnores();
             if (nativeIgnoreAddDetected())
             {
                 nativeAddObserved = true;
@@ -862,14 +916,17 @@ public class ExtendedIgnoreListPlugin extends Plugin
             if (pendingNativeIgnoreImportTicks == 0 && !nativeAddObserved)
             {
                 addPendingFallbackNameToExtendedList();
+                changed = true;
             }
         }
 
         if (pendingNativeIgnoreRemovalTicks > 0 && provideConfig().syncRemoveIgnore())
         {
-            removeNamesNoLongerInNativeList();
+            changed |= removeNamesNoLongerInNativeList();
             pendingNativeIgnoreRemovalTicks--;
         }
+
+        return changed;
     }
 
     private void updateNativeIgnoreSnapshot()
@@ -878,11 +935,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
         previousNativeIgnoreNames.addAll(getNativeIgnoreCurrentNames());
     }
 
-    private void removeNamesNoLongerInNativeList()
+    private boolean removeNamesNoLongerInNativeList()
     {
         if (previousNativeIgnoreNames.isEmpty())
         {
-            return;
+            return false;
         }
 
         Set<String> currentNativeIgnoreNames = getNativeIgnoreCurrentNames();
@@ -905,8 +962,9 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (changed)
         {
             persistIgnoredPlayers();
-            refreshPanelPlayers();
         }
+
+        return changed;
     }
 
     private Set<String> getNativeIgnoreCurrentNames()
@@ -1013,26 +1071,56 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private boolean isIgnoredPlayerNameFast(String playerName)
     {
-        return findIgnoredPlayerByName(playerName) != null;
+        String normalizedName = normalizeName(playerName);
+        return normalizedName != null && ignoredNameIndex.contains(normalizedName);
     }
 
-    private void syncIgnoredPlayersWithNativeContainer()
+    private void rebuildIgnoredNameIndex()
     {
-        if (ignoredPlayers.isEmpty())
+        ignoredNameIndex.clear();
+        for (IgnoredPlayer ignoredPlayer : ignoredPlayers.values())
         {
-            return;
-        }
+            String currentName = normalizeName(ignoredPlayer.getCurrentName());
+            if (currentName != null)
+            {
+                ignoredNameIndex.add(currentName);
+            }
 
+            for (String alias : ignoredPlayer.getAliases())
+            {
+                String normalizedAlias = normalizeName(alias);
+                if (normalizedAlias != null)
+                {
+                    ignoredNameIndex.add(normalizedAlias);
+                }
+            }
+        }
+    }
+
+    private boolean syncIgnoredPlayersWithNativeContainer()
+    {
         NameableContainer<Ignore> ignoreContainer = client.getIgnoreContainer();
         if (ignoreContainer == null)
         {
-            return;
+            return false;
         }
 
         Ignore[] members = ignoreContainer.getMembers();
-        if (members == null || members.length == 0)
+        if (members == null)
         {
-            return;
+            return false;
+        }
+
+        String fingerprint = createNativeIgnoreFingerprint(members);
+        if (fingerprint.equals(nativeIgnoreFingerprint))
+        {
+            return false;
+        }
+        nativeIgnoreFingerprint = fingerprint;
+
+        if (ignoredPlayers.isEmpty() || members.length == 0)
+        {
+            return true;
         }
 
         boolean changed = false;
@@ -1085,8 +1173,30 @@ public class ExtendedIgnoreListPlugin extends Plugin
         {
             ignoredPlayers.clear();
             ignoredPlayers.putAll(refreshedPlayers);
+            rebuildIgnoredNameIndex();
             persistIgnoredPlayers();
         }
+
+        return true;
+    }
+
+    private String createNativeIgnoreFingerprint(Ignore[] members)
+    {
+        StringBuilder fingerprint = new StringBuilder();
+        for (Ignore member : members)
+        {
+            if (member == null)
+            {
+                continue;
+            }
+
+            fingerprint.append(normalizeName(member.getName()))
+                .append('|')
+                .append(normalizeName(member.getPrevName()))
+                .append(';');
+        }
+
+        return fingerprint.toString();
     }
 
     private boolean matchesAnyTrackedName(IgnoredPlayer ignoredPlayer, String... names)

@@ -10,7 +10,7 @@ Extended Ignore List expands RuneScape's native ignore system by maintaining an 
 	- `Add ignore` player menu action syncs into extended list.
 	- Native `Add Name` attempts are captured and synced, including fallback when native add fails (for example, native list is full).
 	- Native `Del Name` / remove-ignore sync can remove from extended list when `Sync Remove ignore` is enabled.
-- Supports manual management in the sidebar with `Add Name` and `Del Name` buttons.
+- Supports adding names from the native ignore-list context menu with `Add to extended`.
 - Supports left-click row deletion and right-click note editing in the extended list.
 - Stores notes independently in the extended list, with note indicators and saved-note tooltips.
 
