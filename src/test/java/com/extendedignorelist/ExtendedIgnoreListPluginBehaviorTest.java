@@ -15,7 +15,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import net.runelite.api.Client;
 import net.runelite.api.Ignore;
 import net.runelite.api.Menu;
@@ -26,8 +25,6 @@ import net.runelite.api.Renderable;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.events.MenuEntryAdded;
-import net.runelite.client.account.AccountSession;
-import net.runelite.client.account.SessionManager;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.menus.MenuManager;
@@ -39,14 +36,12 @@ public class ExtendedIgnoreListPluginBehaviorTest
 {
     private ExtendedIgnoreListPlugin plugin;
     private ConfigManager configManager;
-    private SessionManager sessionManager;
     private Client client;
     private ClientToolbar clientToolbar;
     private MenuManager menuManager;
     private RenderCallbackManager renderCallbackManager;
     private Map<String, String> configValues;
     private Map<String, String> legacyValues;
-    private AccountSession accountSession;
     private String accountKey;
 
     @Before
@@ -54,19 +49,16 @@ public class ExtendedIgnoreListPluginBehaviorTest
     {
         plugin = new ExtendedIgnoreListPlugin();
         configManager = mock(ConfigManager.class);
-        sessionManager = mock(SessionManager.class);
         client = mock(Client.class);
         clientToolbar = mock(ClientToolbar.class);
         menuManager = mock(MenuManager.class);
         renderCallbackManager = mock(RenderCallbackManager.class);
         configValues = new HashMap<>();
         legacyValues = new HashMap<>();
-        accountSession = mock(AccountSession.class);
         accountKey = "123e4567-e89b-12d3-a456-426614174000";
 
-        when(sessionManager.getAccountSession()).thenReturn(accountSession);
-        when(accountSession.getUuid()).thenReturn(UUID.fromString(accountKey));
         when(client.getIgnoreContainer()).thenReturn(null);
+        when(configManager.getRSProfileKey()).thenReturn(accountKey);
         when(configManager.getConfig(ExtendedIgnoreListConfig.class)).thenReturn(new TestConfig(configValues));
         when(configManager.getConfiguration(eq("extendedignorelist"), eq("ignoredPlayers"))).thenAnswer(invocation -> legacyValues.get(key(invocation.getArgument(1), invocation.getArgument(2))));
         when(configManager.getConfiguration(eq("extendedignorelist"), eq(accountKey), eq("ignoredPlayers"))).thenAnswer(invocation -> configValues.get(key(invocation.getArgument(1), invocation.getArgument(2))));
@@ -74,7 +66,6 @@ public class ExtendedIgnoreListPluginBehaviorTest
         setField(plugin, "client", client);
         setField(plugin, "clientToolbar", clientToolbar);
         setField(plugin, "configManager", configManager);
-        setField(plugin, "sessionManager", sessionManager);
         setField(plugin, "menuManager", menuManager);
         setField(plugin, "renderCallbackManager", renderCallbackManager);
     }

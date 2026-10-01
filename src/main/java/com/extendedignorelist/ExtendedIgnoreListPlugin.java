@@ -29,7 +29,6 @@ import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.api.Renderable;
 import net.runelite.client.callback.RenderCallback;
-import net.runelite.client.account.SessionManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -92,9 +91,6 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     @Inject
     private MenuManager menuManager;
-
-    @Inject
-    private SessionManager sessionManager;
 
     private final Map<String, IgnoredPlayer> ignoredPlayers = new LinkedHashMap<>();
     private final Set<String> ignoredNameIndex = new HashSet<>();
@@ -766,17 +762,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private String getAccountStorageKey()
     {
-        if (sessionManager.getAccountSession() == null)
-        {
-            return null;
-        }
-
-        if (sessionManager.getAccountSession().getUuid() == null)
-        {
-            return null;
-        }
-
-        return sessionManager.getAccountSession().getUuid().toString();
+        return configManager.getRSProfileKey();
     }
 
     private void syncAddIgnoreMenuItem()
