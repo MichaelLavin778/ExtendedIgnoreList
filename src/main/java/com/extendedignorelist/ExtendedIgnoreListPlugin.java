@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
+import javax.swing.JOptionPane;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
@@ -108,6 +109,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private String pendingNativeAddFallbackName;
     private String nativeAddDialogBaseline;
     private String nativeAddMesLayerBaseline;
+    private String nativeAddChatInputBaseline;
     private final RenderCallback drawListener = new RenderCallback()
     {
         @Override
@@ -128,7 +130,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
     {
         migratePlayerMenuOptionKey();
         loadIgnoredPlayersForCurrentSession();
-        panel = new ExtendedIgnoreListPanel(this::handleImportIgnoreList, this::removeIgnoredPlayer, this::updatePlayerNote);
+        panel = new ExtendedIgnoreListPanel(this::handleImportIgnoreList, this::handlePanelRemovePlayer, this::updatePlayerNote);
         refreshPanelPlayers();
         syncAddIgnoreMenuItem();
         renderCallbackManager.register(drawListener);
@@ -210,6 +212,21 @@ public class ExtendedIgnoreListPlugin extends Plugin
         updatePanelPlayers();
     }
 
+    private void handlePanelRemovePlayer(String playerName)
+    {
+        if (!provideConfig().deleteConfirmation()
+            || JOptionPane.showConfirmDialog(
+                panel,
+                "Delete " + playerName + "?",
+                "Delete Confirmation",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+            ) == JOptionPane.YES_OPTION)
+        {
+            removeIgnoredPlayer(playerName);
+        }
+    }
+
     public List<IgnoredPlayer> getIgnoredPlayers()
     {
         return new ArrayList<>(ignoredPlayers.values());
@@ -257,6 +274,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
             pendingNativeAddFallbackName = null;
             nativeAddDialogBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.LAST_NAMEDIALOG));
             nativeAddMesLayerBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.MESLAYERINPUT));
+            nativeAddChatInputBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.CHATINPUT));
             pendingNativeIgnoreImportTicks = NATIVE_ACTION_SYNC_TICKS;
         }
 
@@ -810,7 +828,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private boolean isNativeAddNameAction(MenuOptionClicked event)
     {
-        return ADD_NAME_MENU_OPTION.equalsIgnoreCase(event.getMenuOption()) && isNativeIgnoreListAction(event);
+        return ADD_NAME_MENU_OPTION.equalsIgnoreCase(event.getMenuOption());
     }
 
     private boolean isNativeDelNameAction(MenuOptionClicked event)
@@ -949,6 +967,12 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (lastNameDialogInput != null && !lastNameDialogInput.equals(nativeAddDialogBaseline))
         {
             pendingNativeAddFallbackName = lastNameDialogInput;
+        }
+
+        String chatInput = sanitizeCandidateName(client.getVarcStrValue(VarClientID.CHATINPUT));
+        if (chatInput != null && !chatInput.equals(nativeAddChatInputBaseline))
+        {
+            pendingNativeAddFallbackName = chatInput;
         }
     }
 

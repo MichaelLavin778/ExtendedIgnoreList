@@ -24,6 +24,7 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.Player;
 import net.runelite.api.Renderable;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.client.account.AccountSession;
 import net.runelite.client.account.SessionManager;
@@ -229,6 +230,22 @@ public class ExtendedIgnoreListPluginBehaviorTest
     }
 
     @Test
+    public void rejectedNativeAddStillAddsTypedNameToExtendedList() throws Exception
+    {
+        MenuEntry menuEntry = mock(MenuEntry.class);
+        when(menuEntry.getOption()).thenReturn("Add Name");
+        when(client.getVarcStrValue(VarClientID.CHATINPUT)).thenReturn(null, "Bob");
+
+        plugin.onMenuOptionClicked(new net.runelite.api.events.MenuOptionClicked(menuEntry));
+        for (int tick = 0; tick < 30; tick++)
+        {
+            invokePrivateNoArgs(plugin, "syncPendingNativeIgnoreActions");
+        }
+
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Bob"));
+    }
+
+    @Test
     public void migratesLegacyPlayerMenuOptionKey() throws Exception
     {
         when(configManager.getConfiguration(eq("extendedignorelist"), eq("showMenuEntryOption"))).thenReturn("false");
@@ -350,6 +367,12 @@ public class ExtendedIgnoreListPluginBehaviorTest
         public boolean syncRemoveIgnore()
         {
             return readBoolean("syncRemoveIgnore", false);
+        }
+
+        @Override
+        public boolean deleteConfirmation()
+        {
+            return readBoolean("deleteConfirmation", true);
         }
 
         @Override

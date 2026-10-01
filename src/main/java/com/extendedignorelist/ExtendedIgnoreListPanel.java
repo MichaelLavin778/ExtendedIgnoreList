@@ -35,6 +35,7 @@ public class ExtendedIgnoreListPanel extends PluginPanel
     private static final Color PRIMARY_TEXT = ColorScheme.TEXT_COLOR;
     private static final Color SECONDARY_TEXT = ColorScheme.LIGHT_GRAY_COLOR;
     private static final String NOTE_ICON_TEXT = "\u25A4";
+    private static final String PREVIOUS_NAME_ICON_TEXT = "\u21C4";
     private static final int ROW_HEIGHT = 24;
 
     private final JPanel playersListPanel = new JPanel();
@@ -225,10 +226,10 @@ public class ExtendedIgnoreListPanel extends PluginPanel
         List<String> aliases = player.getAliases();
         if (!aliases.isEmpty())
         {
-            JLabel aliasesLabel = new JLabel("Also known as: " + String.join(", ", aliases));
-            aliasesLabel.setForeground(SECONDARY_TEXT);
-            aliasesLabel.setAlignmentX(LEFT_ALIGNMENT);
-            textPanel.add(aliasesLabel);
+            JLabel previousNameIcon = new JLabel(PREVIOUS_NAME_ICON_TEXT);
+            previousNameIcon.setForeground(SECONDARY_TEXT);
+            previousNameIcon.setToolTipText(String.join(", ", aliases));
+            namePanel.add(previousNameIcon);
         }
 
         textPanel.add(Box.createVerticalGlue());
@@ -253,10 +254,6 @@ public class ExtendedIgnoreListPanel extends PluginPanel
 
         rowPanel.add(textPanel, BorderLayout.CENTER);
         applyDeleteRowBehavior(rowPanel, deleteClickListener);
-        if (!player.getNote().isEmpty())
-        {
-            applyRowTooltip(rowPanel, player.getNote());
-        }
         return rowPanel;
     }
 
@@ -291,23 +288,4 @@ public class ExtendedIgnoreListPanel extends PluginPanel
         }
     }
 
-    private void applyRowTooltip(Component component, String note)
-    {
-        if (component instanceof javax.swing.JComponent)
-        {
-            boolean noteIcon = component instanceof JLabel && NOTE_ICON_TEXT.equals(((JLabel) component).getText());
-            if (!noteIcon)
-            {
-                ((javax.swing.JComponent) component).setToolTipText(note);
-            }
-        }
-
-        if (component instanceof Container)
-        {
-            for (Component child : ((Container) component).getComponents())
-            {
-                applyRowTooltip(child, note);
-            }
-        }
-    }
 }

@@ -40,7 +40,7 @@ public class ExtendedIgnoreListPanelTest
         SwingUtilities.invokeAndWait(() -> panel.setPlayers(players));
 
         assertTrue(findLabelText(panel, "Alice"));
-        assertTrue(findLabelText(panel, "Also known as: Alicia"));
+        assertTrue(findLabelText(panel, "\u21C4"));
         assertTrue(findLabelText(panel, "Bob"));
         assertFalse(findLabelText(panel, "No players added yet."));
     }

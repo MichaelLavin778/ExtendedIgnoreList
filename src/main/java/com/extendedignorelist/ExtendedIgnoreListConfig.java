@@ -41,10 +41,21 @@ public interface ExtendedIgnoreListConfig extends Config
     }
 
     @ConfigItem(
+        keyName = "deleteConfirmation",
+        name = "Delete Confirmation",
+        description = "Ask for confirmation before deleting a player from the extended ignore list",
+        position = 3
+    )
+    default boolean deleteConfirmation()
+    {
+        return true;
+    }
+
+    @ConfigItem(
         keyName = "hidePlayers",
         name = "Hide Players",
         description = "Hide ignored players from the scene",
-        position = 3
+        position = 4
     )
     default boolean hidePlayers()
     {
@@ -55,7 +66,7 @@ public interface ExtendedIgnoreListConfig extends Config
         keyName = "syncRemoveIgnore",
         name = "Sync Remove Ignore",
         description = "Remove players from the extended ignore list when they are removed from RuneScape's native ignore list",
-        position = 4
+        position = 5
     )
     default boolean syncRemoveIgnore()
     {
