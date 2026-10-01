@@ -1,20 +1,26 @@
 # Extended Ignore List
 
-A starter project for an Extended Ignore List RuneLite plugin. **Ignore-list features have not been implemented yet.** This repository is not ready for submission to Plugin Hub until the plugin does what its description promises.
+Extended Ignore List expands RuneScape's native ignore system by maintaining an additional plugin-managed ignore list, so you can track and filter more players than the in-game limit.
 
-## Development
+## What it does
 
-Install Java 11 and open the project in IntelliJ IDEA. Run `./gradlew run` (or `gradlew.bat run` on Windows) to launch RuneLite with the plugin loaded. The main plugin class is `com.extendedignorelist.ExtendedIgnoreListPlugin`; metadata is in `runelite-plugin.properties`.
+- Extends ignore capacity beyond the native cap by storing extra ignored names in plugin config.
+- Imports your current native ignore list into the extended list with one click.
+- Mirrors native ignore actions:
+	- `Add ignore` player menu action syncs into extended list.
+	- Native `Add Name` attempts are captured and synced, including fallback when native add fails (for example, native list is full).
+	- Native `Del Name` / remove-ignore sync can remove from extended list when `Sync Remove ignore` is enabled.
+- Supports manual management in the sidebar with `Add Name` and `Del Name` buttons.
+- Supports left-click row deletion and right-click note editing in the extended list.
+- Stores notes independently in the extended list, with note indicators and saved-note tooltips.
 
-The project uses the RuneLite [example-plugin](https://github.com/runelite/example-plugin) template and `build=standard`, which lets Plugin Hub use its standard build instead of custom Gradle build logic. Avoid adding third-party dependencies unless necessary; Plugin Hub requires cryptographic hash verification for them.
+## Identity and syncing behavior
 
-## Plugin Hub submission
+- Tracks rename history using aliases and native ignore current/previous names, so ignored players stay matched after name changes.
+- Keeps data per logged-in account session (account-scoped persistence), and reloads automatically when sessions open/close.
 
-Once the plugin works, update its user-facing description and tags, push a commit to this public repository, then fork [runelite/plugin-hub](https://github.com/runelite/plugin-hub). Add `plugins/extendedignorelist` to your fork containing:
+## Optional filtering features
 
-```properties
-repository=https://github.com/MichaelLavin778/ExtendedIgnoreList.git
-commit=<full 40-character SHA of the plugin commit>
-```
-
-Open a pull request to `runelite/plugin-hub`. If you update this plugin later, update the `commit=` SHA in that manifest. See the [Plugin Hub submission guide](https://github.com/runelite/plugin-hub) for review and build requirements. This repository alone does not install the plugin in RuneLite.
+- Hide ignored players from rendering in-scene.
+- Suppress chat visibility checks for ignored names.
+- Hide incoming trade request messages from ignored players.
