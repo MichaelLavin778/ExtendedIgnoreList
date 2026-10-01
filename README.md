@@ -2,6 +2,8 @@
 
 Extended Ignore List expands RuneScape's native ignore system by maintaining an additional plugin-managed ignore list, so you can track and filter more players than the in-game limit.
 
+![Extended Ignore List panel](assets/panel.png)
+
 ## What it does
 
 - Extends ignore capacity beyond the native cap by storing extra ignored names in plugin config.
