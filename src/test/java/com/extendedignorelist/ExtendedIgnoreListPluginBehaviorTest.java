@@ -5,7 +5,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,7 +29,14 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.client.callback.RenderCallbackManager;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.RuneScapeProfile;
+import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.ProfileChanged;
+import net.runelite.client.events.RuneScapeProfileChanged;
+import net.runelite.client.events.SessionClose;
+import net.runelite.client.events.SessionOpen;
 import net.runelite.client.menus.MenuManager;
 import net.runelite.client.ui.ClientToolbar;
 import org.junit.Before;
@@ -34,14 +44,17 @@ import org.junit.Test;
 
 public class ExtendedIgnoreListPluginBehaviorTest
 {
+    private static final String SHARED_STORAGE_KEY = "rsprofile.extendedignorelist";
     private ExtendedIgnoreListPlugin plugin;
     private ConfigManager configManager;
+    private ClientThread clientThread;
     private Client client;
     private ClientToolbar clientToolbar;
     private MenuManager menuManager;
     private RenderCallbackManager renderCallbackManager;
     private Map<String, String> configValues;
-    private Map<String, String> legacyValues;
+    private Map<String, String> sharedValues;
+    private Map<String, String> profileValues;
     private String accountKey;
 
     @Before
@@ -49,23 +62,56 @@ public class ExtendedIgnoreListPluginBehaviorTest
     {
         plugin = new ExtendedIgnoreListPlugin();
         configManager = mock(ConfigManager.class);
+        clientThread = mock(ClientThread.class);
         client = mock(Client.class);
         clientToolbar = mock(ClientToolbar.class);
         menuManager = mock(MenuManager.class);
         renderCallbackManager = mock(RenderCallbackManager.class);
         configValues = new HashMap<>();
-        legacyValues = new HashMap<>();
+        sharedValues = new HashMap<>();
+        profileValues = new HashMap<>();
         accountKey = "123e4567-e89b-12d3-a456-426614174000";
 
         when(client.getIgnoreContainer()).thenReturn(null);
         when(configManager.getRSProfileKey()).thenReturn(accountKey);
         when(configManager.getConfig(ExtendedIgnoreListConfig.class)).thenReturn(new TestConfig(configValues));
-        when(configManager.getConfiguration(eq("extendedignorelist"), eq("ignoredPlayers"))).thenAnswer(invocation -> legacyValues.get(key(invocation.getArgument(1), invocation.getArgument(2))));
-        when(configManager.getConfiguration(eq("extendedignorelist"), eq(accountKey), eq("ignoredPlayers"))).thenAnswer(invocation -> configValues.get(key(invocation.getArgument(1), invocation.getArgument(2))));
+        when(configManager.getConfiguration(eq("extendedignorelist"), eq("ignoredPlayers"))).thenAnswer(invocation -> profileValues.get("ignoredPlayers"));
+        when(configManager.getConfiguration(eq("extendedignorelist"), anyString(), eq("ignoredPlayers"))).thenAnswer(invocation -> configValues.get(key(invocation.getArgument(1), invocation.getArgument(2))));
+        when(configManager.getConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"))).thenAnswer(invocation -> sharedValues.get("ignoredPlayers"));
+        doAnswer(invocation ->
+        {
+            sharedValues.put("ignoredPlayers", invocation.getArgument(3));
+            plugin.onConfigChanged(sharedListChanged());
+            return null;
+        }).when(configManager).setConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"), anyString());
+        doAnswer(invocation ->
+        {
+            profileValues.remove("ignoredPlayers");
+            return null;
+        }).when(configManager).unsetConfiguration(eq("extendedignorelist"), eq("ignoredPlayers"));
+        doAnswer(invocation ->
+        {
+            configValues.remove(key(invocation.getArgument(1), invocation.getArgument(2)));
+            return null;
+        }).when(configManager).unsetConfiguration(eq("extendedignorelist"), anyString(), eq("ignoredPlayers"));
+        doAnswer(invocation ->
+        {
+            sharedValues.remove("ignoredPlayers");
+            plugin.onConfigChanged(sharedListChanged());
+            return null;
+        }).when(configManager).unsetConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"));
+        doAnswer(invocation ->
+        {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(clientThread).invoke(org.mockito.ArgumentMatchers.any(Runnable.class));
 
         setField(plugin, "client", client);
         setField(plugin, "clientToolbar", clientToolbar);
         setField(plugin, "configManager", configManager);
+        setField(plugin, "clientThread", clientThread);
+        setField(plugin, "activeConfig", new TestConfig(configValues));
         setField(plugin, "menuManager", menuManager);
         setField(plugin, "renderCallbackManager", renderCallbackManager);
     }
@@ -85,7 +131,8 @@ public class ExtendedIgnoreListPluginBehaviorTest
         assertTrue(alice.getAliases().isEmpty());
         assertTrue(alicePrime.getAliases().isEmpty());
 
-        verify(configManager).setConfiguration(eq("extendedignorelist"), eq(accountKey), eq("ignoredPlayers"), eq("v3\tAlice\t\t\nv3\tAlice Prime\t\t"));
+        verify(configManager).setConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"), eq("v3\tAlice\t\t\nv3\tAlice Prime\t\t"));
+        verify(clientThread, never()).invoke(org.mockito.ArgumentMatchers.any(Runnable.class));
     }
 
     @Test
@@ -274,6 +321,240 @@ public class ExtendedIgnoreListPluginBehaviorTest
         assertEquals("Alice", players.get(0).getCurrentName());
         assertTrue(players.get(0).getAliases().contains("Alicia"));
         assertEquals("", players.get(0).getNote());
+    }
+
+    @Test
+    public void importedListIsSharedWhenRuneScapeAccountChanges() throws Exception
+    {
+        Ignore alice = mock(Ignore.class);
+        when(alice.getName()).thenReturn("Alice");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[] {alice});
+        when(client.getIgnoreContainer()).thenReturn(container);
+
+        plugin.startUp();
+        invokePrivateNoArgs(plugin, "importMissingNativeIgnores");
+        when(configManager.getRSProfileKey()).thenReturn("another-account");
+        when(client.getIgnoreContainer()).thenReturn(null);
+        plugin.onRuneScapeProfileChanged(new RuneScapeProfileChanged(accountKey, "another-account"));
+
+        assertEquals(1, plugin.getIgnoredPlayers().size());
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Alice"));
+        assertEquals("v3\tAlice\t\t", sharedValues.get("ignoredPlayers"));
+        plugin.shutDown();
+    }
+
+    @Test
+    public void restartedClientLoadsSyncedSnapshotForDifferentRuneScapeAccount()
+    {
+        plugin.startUp();
+        plugin.addIgnoredPlayer("Alice");
+        plugin.shutDown();
+
+        // Model the shared config snapshot delivered by RuneLite cloud sync.
+        when(configManager.getRSProfileKey()).thenReturn("another-account");
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\tshared note");
+        plugin.startUp();
+
+        assertEquals(1, plugin.getIgnoredPlayers().size());
+        assertEquals("shared note", plugin.getIgnoredPlayers().get(0).getNote());
+        assertTrue(plugin.getIgnoredPlayers().get(0).getAliases().contains("Alicia"));
+        plugin.shutDown();
+    }
+
+    @Test
+    public void editsAndDeletionPersistInSharedConfig() throws Exception
+    {
+        plugin.addIgnoredPlayer("Alice");
+
+        invoke(plugin, "updatePlayerNote", new Class<?>[] {String.class, String.class}, "Alice", "updated note");
+
+        assertEquals("v3\tAlice\t\tupdated note", sharedValues.get("ignoredPlayers"));
+        plugin.removeIgnoredPlayer("Alice");
+        verify(configManager).unsetConfiguration("extendedignorelist", SHARED_STORAGE_KEY, "ignoredPlayers");
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+    }
+
+    @Test
+    public void loadsSharedListWithoutRuneScapeLogin()
+    {
+        when(configManager.getRSProfileKey()).thenReturn(null);
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\tshared note");
+
+        plugin.onSessionOpen(new SessionOpen());
+
+        assertEquals(1, plugin.getIgnoredPlayers().size());
+        assertEquals("shared note", plugin.getIgnoredPlayers().get(0).getNote());
+    }
+
+    @Test
+    public void mergesAllAccountListsAndPreservesAliasesAndConflictingNotes()
+    {
+        RuneScapeProfile otherProfile = mock(RuneScapeProfile.class);
+        when(otherProfile.getKey()).thenReturn("another-account");
+        when(configManager.getRSProfiles()).thenReturn(Arrays.asList(otherProfile));
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\tshared note");
+        configValues.put(key(accountKey, "ignoredPlayers"), "v3\tAlicia\tOld Alice\taccount note");
+        configValues.put(key("another-account", "ignoredPlayers"), "v3\tBob\tBobby\tother note");
+
+        plugin.onSessionOpen(new SessionOpen());
+
+        assertEquals(2, plugin.getIgnoredPlayers().size());
+        IgnoredPlayer alice = findPlayer(plugin.getIgnoredPlayers(), "Alice");
+        assertTrue(alice.getAliases().contains("Old Alice"));
+        assertEquals("shared note / account note", alice.getNote());
+        assertEquals("other note", findPlayer(plugin.getIgnoredPlayers(), "Bob").getNote());
+        verify(configManager).unsetConfiguration("extendedignorelist", accountKey, "ignoredPlayers");
+        verify(configManager).unsetConfiguration("extendedignorelist", "another-account", "ignoredPlayers");
+
+        plugin.removeIgnoredPlayer("Alice");
+        plugin.removeIgnoredPlayer("Bob");
+        plugin.onSessionOpen(new SessionOpen());
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        assertFalse(sharedValues.containsKey("ignoredPlayers"));
+    }
+
+    @Test
+    public void receivedSharedConfigChangesReloadAliasesNotesAndDeletions() throws Exception
+    {
+        plugin.addIgnoredPlayer("Local Entry");
+        sharedValues.put("ignoredPlayers", "v3\tRemote Entry\tPrevious Name\tremote note");
+
+        plugin.onConfigChanged(sharedListChanged());
+
+        assertEquals(1, plugin.getIgnoredPlayers().size());
+        assertEquals("remote note", plugin.getIgnoredPlayers().get(0).getNote());
+        assertTrue(invokeBoolean(plugin, "isIgnoredPlayerName", new Class<?>[] {String.class}, "Previous Name"));
+        assertFalse(invokeBoolean(plugin, "isIgnoredPlayerName", new Class<?>[] {String.class}, "Local Entry"));
+
+        sharedValues.remove("ignoredPlayers");
+        plugin.onConfigChanged(sharedListChanged());
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        assertFalse(invokeBoolean(plugin, "isIgnoredPlayerName", new Class<?>[] {String.class}, "Previous Name"));
+    }
+
+    @Test
+    public void profileSwitchKeepsSharedListAndMigratesTheSelectedProfilesOldList()
+    {
+        plugin.addIgnoredPlayer("Shared Entry");
+        profileValues.put("ignoredPlayers", "v3\tSecond Profile\t\t");
+
+        plugin.onProfileChanged(new ProfileChanged());
+
+        assertEquals(2, plugin.getIgnoredPlayers().size());
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Shared Entry"));
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Second Profile"));
+        assertFalse(profileValues.containsKey("ignoredPlayers"));
+
+        profileValues.clear();
+        plugin.onProfileChanged(new ProfileChanged());
+        assertEquals(2, plugin.getIgnoredPlayers().size());
+    }
+
+    @Test
+    public void migratesConfigurationProfileListWithoutReimportingDeletedEntries()
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\tshared note");
+        profileValues.put("ignoredPlayers", "v3\tAlicia\tOld Alice\tprofile note\nv2\tBob\tBobby");
+
+        plugin.onProfileChanged(new ProfileChanged());
+
+        assertEquals(2, plugin.getIgnoredPlayers().size());
+        IgnoredPlayer alice = findPlayer(plugin.getIgnoredPlayers(), "Alice");
+        assertTrue(alice.getAliases().contains("Old Alice"));
+        assertEquals("shared note / profile note", alice.getNote());
+        assertTrue(findPlayer(plugin.getIgnoredPlayers(), "Bob").getAliases().contains("Bobby"));
+        verify(configManager).unsetConfiguration("extendedignorelist", "ignoredPlayers");
+
+        plugin.removeIgnoredPlayer("Alice");
+        plugin.removeIgnoredPlayer("Bob");
+        plugin.onProfileChanged(new ProfileChanged());
+        plugin.onSessionOpen(new SessionOpen());
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        assertFalse(sharedValues.containsKey("ignoredPlayers"));
+    }
+
+    @Test
+    public void profileSpecificSettingChangesDoNotAffectSharedEntries()
+    {
+        plugin.addIgnoredPlayer("Alice");
+        setConfigField("hidePlayers", true);
+        ConfigChanged event = new ConfigChanged();
+        event.setGroup("extendedignorelist");
+        event.setKey("hidePlayers");
+        plugin.onConfigChanged(event);
+        verify(renderCallbackManager).register(org.mockito.ArgumentMatchers.any());
+
+        setConfigField("hidePlayers", false);
+        plugin.onConfigChanged(event);
+        verify(renderCallbackManager).unregister(org.mockito.ArgumentMatchers.any());
+
+        plugin.onProfileChanged(new ProfileChanged());
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Alice"));
+        assertEquals("v3\tAlice\t\t", sharedValues.get("ignoredPlayers"));
+        verify(configManager, never()).setConfiguration(eq("extendedignorelist"), eq("ignoredPlayers"), anyString());
+    }
+
+    @Test
+    public void profileScopedListChangeDoesNotReplaceSharedEntries()
+    {
+        plugin.addIgnoredPlayer("Alice");
+        profileValues.put("ignoredPlayers", "v3\tBob\t\t");
+        ConfigChanged event = sharedListChanged();
+        event.setProfile(null);
+
+        plugin.onConfigChanged(event);
+
+        assertEquals(1, plugin.getIgnoredPlayers().size());
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Alice"));
+        verify(clientThread, never()).invoke(org.mockito.ArgumentMatchers.any(Runnable.class));
+
+        plugin.onProfileChanged(new ProfileChanged());
+        assertEquals(2, plugin.getIgnoredPlayers().size());
+    }
+
+    @Test
+    public void runeLiteLogoutDoesNotDiscardSharedList()
+    {
+        plugin.addIgnoredPlayer("Alice");
+
+        plugin.onSessionClose(new SessionClose());
+
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Alice"));
+    }
+
+    @Test
+    public void accountScopedConfigChangesDoNotReplaceSharedList()
+    {
+        plugin.addIgnoredPlayer("Alice");
+        ConfigChanged event = sharedListChanged();
+        event.setProfile(accountKey);
+
+        plugin.onConfigChanged(event);
+
+        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Alice"));
+        verify(clientThread, never()).invoke(org.mockito.ArgumentMatchers.any(Runnable.class));
+    }
+
+    @Test
+    public void loadingSharedDataDoesNotWriteItBack()
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\t\t");
+
+        plugin.onSessionOpen(new SessionOpen());
+
+        verify(configManager, never()).setConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"), anyString());
+        verify(configManager, never()).unsetConfiguration("extendedignorelist", SHARED_STORAGE_KEY, "ignoredPlayers");
+    }
+
+    private static ConfigChanged sharedListChanged()
+    {
+        ConfigChanged event = new ConfigChanged();
+        event.setGroup("extendedignorelist");
+        event.setKey("ignoredPlayers");
+        event.setProfile(SHARED_STORAGE_KEY);
+        return event;
     }
 
     private IgnoredPlayer findPlayer(List<IgnoredPlayer> players, String name)

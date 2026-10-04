@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,10 +30,14 @@ import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.api.Renderable;
 import net.runelite.client.callback.RenderCallback;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.RuneScapeProfile;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.ProfileChanged;
+import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.client.events.SessionClose;
 import net.runelite.client.events.SessionOpen;
@@ -61,6 +66,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private static final String PLAYER_MENU_OPTION_KEY = "playerMenuOption";
     private static final String LEGACY_PLAYER_MENU_OPTION_KEY = "showMenuEntryOption";
     private static final String IGNORED_PLAYERS_CONFIG_KEY = "ignoredPlayers";
+    // A fixed rsprofile namespace uses RuneLite's automatically synced store without following a game account.
+    private static final String SHARED_STORAGE_KEY = "rsprofile.extendedignorelist";
     private static final String LEGACY_SERIALIZED_ROW_VERSION = "v2";
     private static final String SERIALIZED_ROW_VERSION = "v3";
     private static final String CHAT_FILTER_CHECK_EVENT = "chatFilterCheck";
@@ -87,6 +94,9 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private ConfigManager configManager;
 
     @Inject
+    private ClientThread clientThread;
+
+    @Inject
     private RenderCallbackManager renderCallbackManager;
 
     @Inject
@@ -98,6 +108,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private NavigationButton navigationButton;
     private ExtendedIgnoreListPanel panel;
     private ExtendedIgnoreListConfig activeConfig;
+    private boolean updatingIgnoredPlayersConfig;
     private boolean addIgnoreMenuRegistered;
     private boolean drawListenerRegistered;
     private int pendingNativeIgnoreImportTicks;
@@ -282,6 +293,12 @@ public class ExtendedIgnoreListPlugin extends Plugin
             return;
         }
 
+        if (IGNORED_PLAYERS_CONFIG_KEY.equals(event.getKey())
+            && SHARED_STORAGE_KEY.equals(event.getProfile()) && !updatingIgnoredPlayersConfig)
+        {
+            reloadIgnoredPlayers();
+        }
+
         if (PLAYER_MENU_OPTION_KEY.equals(event.getKey()))
         {
             syncAddIgnoreMenuItem();
@@ -369,18 +386,46 @@ public class ExtendedIgnoreListPlugin extends Plugin
     @Subscribe
     public void onSessionOpen(SessionOpen sessionOpen)
     {
-        loadIgnoredPlayersForCurrentSession();
-        refreshPanelPlayers();
+        reloadIgnoredPlayers();
     }
 
     @Subscribe
     public void onSessionClose(SessionClose sessionClose)
     {
-        ignoredPlayers.clear();
-        ignoredNameIndex.clear();
-        nativeIgnoreFingerprint = null;
-        previousNativeIgnoreNames.clear();
-        refreshPanelPlayers();
+        reloadIgnoredPlayers();
+    }
+
+    @Subscribe
+    public void onProfileChanged(ProfileChanged event)
+    {
+        reloadIgnoredPlayers();
+    }
+
+    @Subscribe
+    public void onRuneScapeProfileChanged(RuneScapeProfileChanged event)
+    {
+        clientThread.invoke(() ->
+        {
+            if (activeConfig != null)
+            {
+                pendingNativeIgnoreImportTicks = 0;
+                pendingNativeIgnoreRemovalTicks = 0;
+                loadIgnoredPlayersForCurrentSession();
+                refreshPanelPlayers();
+            }
+        });
+    }
+
+    private void reloadIgnoredPlayers()
+    {
+        clientThread.invoke(() ->
+        {
+            if (activeConfig != null)
+            {
+                loadIgnoredPlayersForCurrentSession();
+                refreshPanelPlayers();
+            }
+        });
     }
 
     @Subscribe
@@ -625,20 +670,16 @@ public class ExtendedIgnoreListPlugin extends Plugin
         nativeIgnoreFingerprint = null;
         previousNativeIgnoreNames.clear();
 
-        String accountStorageKey = getAccountStorageKey();
-        if (accountStorageKey == null)
-        {
-            return;
-        }
+        mergeSerializedIgnoredPlayers(configManager.getConfiguration(CONFIG_GROUP, SHARED_STORAGE_KEY, IGNORED_PLAYERS_CONFIG_KEY));
+        migrateIgnoredPlayers();
+        rebuildIgnoredNameIndex();
+    }
 
-        String serializedPlayers = configManager.getConfiguration(CONFIG_GROUP, accountStorageKey, IGNORED_PLAYERS_CONFIG_KEY);
+    private void mergeSerializedIgnoredPlayers(String serializedPlayers)
+    {
         if (serializedPlayers == null || serializedPlayers.isEmpty())
         {
-            serializedPlayers = configManager.getConfiguration(CONFIG_GROUP, IGNORED_PLAYERS_CONFIG_KEY);
-            if (serializedPlayers == null || serializedPlayers.isEmpty())
-            {
-                return;
-            }
+            return;
         }
 
         List<IgnoredPlayer> loadedPlayers = new ArrayList<>();
@@ -712,29 +753,95 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
         for (IgnoredPlayer player : loadedPlayers)
         {
-            ignoredPlayers.put(normalizeName(player.getCurrentName()), player);
+            String normalizedName = normalizeName(player.getCurrentName());
+            if (normalizedName == null)
+            {
+                log.debug("Skipping ignored player with an empty name");
+                continue;
+            }
+
+            IgnoredPlayer existing = findIgnoredPlayerByName(player.getCurrentName());
+            if (existing == null)
+            {
+                for (String alias : player.getAliases())
+                {
+                    existing = findIgnoredPlayerByName(alias);
+                    if (existing != null)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (existing == null)
+            {
+                ignoredPlayers.put(normalizedName, player);
+            }
+            else
+            {
+                existing.addAlias(player.getCurrentName());
+                existing.addAliases(player.getAliases());
+                if (!player.getNote().isEmpty() && !existing.getNote().equals(player.getNote()))
+                {
+                    existing.setNote(existing.getNote().isEmpty()
+                        ? player.getNote() : existing.getNote() + " / " + player.getNote());
+                }
+            }
+        }
+    }
+
+    private void migrateIgnoredPlayers()
+    {
+        String profilePlayers = configManager.getConfiguration(CONFIG_GROUP, IGNORED_PLAYERS_CONFIG_KEY);
+        boolean migrateProfile = profilePlayers != null && !profilePlayers.isEmpty();
+        if (migrateProfile)
+        {
+            mergeSerializedIgnoredPlayers(profilePlayers);
         }
 
-        rebuildIgnoredNameIndex();
+        Set<String> accountKeys = new LinkedHashSet<>();
+        for (RuneScapeProfile profile : configManager.getRSProfiles())
+        {
+            accountKeys.add(profile.getKey());
+        }
+        String currentAccountKey = getAccountStorageKey();
+        if (currentAccountKey != null)
+        {
+            accountKeys.add(currentAccountKey);
+        }
 
-        persistIgnoredPlayers();
-        configManager.unsetConfiguration(CONFIG_GROUP, IGNORED_PLAYERS_CONFIG_KEY);
+        List<String> migratedKeys = new ArrayList<>();
+        for (String accountKey : accountKeys)
+        {
+            if (SHARED_STORAGE_KEY.equals(accountKey))
+            {
+                continue;
+            }
+
+            String serializedPlayers = configManager.getConfiguration(CONFIG_GROUP, accountKey, IGNORED_PLAYERS_CONFIG_KEY);
+            if (serializedPlayers != null && !serializedPlayers.isEmpty())
+            {
+                mergeSerializedIgnoredPlayers(serializedPlayers);
+                migratedKeys.add(accountKey);
+            }
+        }
+
+        if (migrateProfile || !migratedKeys.isEmpty())
+        {
+            persistIgnoredPlayers();
+            if (migrateProfile)
+            {
+                configManager.unsetConfiguration(CONFIG_GROUP, IGNORED_PLAYERS_CONFIG_KEY);
+            }
+            for (String accountKey : migratedKeys)
+            {
+                configManager.unsetConfiguration(CONFIG_GROUP, accountKey, IGNORED_PLAYERS_CONFIG_KEY);
+            }
+        }
     }
 
     private void persistIgnoredPlayers()
     {
-        String accountStorageKey = getAccountStorageKey();
-        if (accountStorageKey == null)
-        {
-            return;
-        }
-
-        if (ignoredPlayers.isEmpty())
-        {
-            configManager.unsetConfiguration(CONFIG_GROUP, accountStorageKey, IGNORED_PLAYERS_CONFIG_KEY);
-            return;
-        }
-
         StringBuilder serializedPlayers = new StringBuilder();
         for (IgnoredPlayer player : ignoredPlayers.values())
         {
@@ -757,7 +864,22 @@ public class ExtendedIgnoreListPlugin extends Plugin
             serializedPlayers.append('\t').append(sanitizeNote(player.getNote()));
         }
 
-        configManager.setConfiguration(CONFIG_GROUP, accountStorageKey, IGNORED_PLAYERS_CONFIG_KEY, serializedPlayers.toString());
+        updatingIgnoredPlayersConfig = true;
+        try
+        {
+            if (ignoredPlayers.isEmpty())
+            {
+                configManager.unsetConfiguration(CONFIG_GROUP, SHARED_STORAGE_KEY, IGNORED_PLAYERS_CONFIG_KEY);
+            }
+            else
+            {
+                configManager.setConfiguration(CONFIG_GROUP, SHARED_STORAGE_KEY, IGNORED_PLAYERS_CONFIG_KEY, serializedPlayers.toString());
+            }
+        }
+        finally
+        {
+            updatingIgnoredPlayersConfig = false;
+        }
     }
 
     private String getAccountStorageKey()
