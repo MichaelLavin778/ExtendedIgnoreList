@@ -130,8 +130,10 @@ public class ExtendedIgnoreListPluginBehaviorTest
         assertNotNull(alicePrime);
         assertTrue(alice.getAliases().isEmpty());
         assertTrue(alicePrime.getAliases().isEmpty());
+        assertEquals("Alice Prime", players.get(0).getCurrentName());
+        assertEquals("Alice", players.get(1).getCurrentName());
 
-        verify(configManager).setConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"), eq("v3\tAlice\t\t\nv3\tAlice Prime\t\t"));
+        verify(configManager).setConfiguration(eq("extendedignorelist"), eq(SHARED_STORAGE_KEY), eq("ignoredPlayers"), eq("v3\tAlice Prime\t\t\nv3\tAlice\t\t"));
         verify(clientThread, never()).invoke(org.mockito.ArgumentMatchers.any(Runnable.class));
     }
 

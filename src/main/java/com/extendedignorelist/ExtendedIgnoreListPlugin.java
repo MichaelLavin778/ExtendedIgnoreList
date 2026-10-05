@@ -199,7 +199,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
         ignoredPlayers.entrySet().removeIf(entry -> entry.getValue() == trackedPlayer);
         trackedPlayer.setCurrentName(playerName);
         trackedPlayer.addAlias(playerName);
-        ignoredPlayers.put(normalizedName, trackedPlayer);
+        Map<String, IgnoredPlayer> reorderedPlayers = new LinkedHashMap<>();
+        reorderedPlayers.put(normalizedName, trackedPlayer);
+        reorderedPlayers.putAll(ignoredPlayers);
+        ignoredPlayers.clear();
+        ignoredPlayers.putAll(reorderedPlayers);
         nativeIgnoreFingerprint = null;
         persistIgnoredPlayers();
         refreshPanelPlayers();
