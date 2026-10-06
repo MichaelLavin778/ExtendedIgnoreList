@@ -17,6 +17,7 @@ import javax.swing.JOptionPane;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.Ignore;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MessageNode;
@@ -24,12 +25,14 @@ import net.runelite.api.NameableContainer;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.api.Renderable;
 import net.runelite.client.callback.RenderCallback;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.RuneScapeProfile;
@@ -102,11 +105,16 @@ public class ExtendedIgnoreListPlugin extends Plugin
     @Inject
     private MenuManager menuManager;
 
+    @Inject
+    private Notifier notifier;
+
     private final Map<String, IgnoredPlayer> ignoredPlayers = new LinkedHashMap<>();
     private final Set<String> ignoredNameIndex = new HashSet<>();
 
     private NavigationButton navigationButton;
     private ExtendedIgnoreListPanel panel;
+    private RaidBoardHighlighter raidBoardHighlighter;
+    private RaidGroupMonitor raidGroupMonitor;
     private ExtendedIgnoreListConfig activeConfig;
     private boolean updatingIgnoredPlayersConfig;
     private boolean addIgnoreMenuRegistered;
@@ -142,6 +150,9 @@ public class ExtendedIgnoreListPlugin extends Plugin
         migratePlayerMenuOptionKey();
         activeConfig = provideConfig();
         loadIgnoredPlayersForCurrentSession();
+        raidBoardHighlighter = new RaidBoardHighlighter(client, this::isIgnoredPlayerNameFast);
+        raidGroupMonitor = new RaidGroupMonitor(client, this::isIgnoredPlayerNameFast,
+            () -> provideConfig().censorName(), this::notifyRaidGroup);
         panel = new ExtendedIgnoreListPanel(this::handleImportIgnoreList, this::handlePanelRemovePlayer, this::updatePlayerNote);
         refreshPanelPlayers();
         syncAddIgnoreMenuItem();
@@ -166,6 +177,19 @@ public class ExtendedIgnoreListPlugin extends Plugin
             drawListenerRegistered = false;
         }
         removeAddIgnoreMenuItem();
+
+        if (raidGroupMonitor != null)
+        {
+            raidGroupMonitor.reset();
+            raidGroupMonitor = null;
+        }
+
+        if (raidBoardHighlighter != null)
+        {
+            RaidBoardHighlighter highlighter = raidBoardHighlighter;
+            raidBoardHighlighter = null;
+            clientThread.invoke(highlighter::restore);
+        }
 
         if (navigationButton != null)
         {
@@ -312,6 +336,22 @@ public class ExtendedIgnoreListPlugin extends Plugin
         {
             syncDrawListener();
         }
+
+        if ("highlightRaidsAndGroups".equals(event.getKey()))
+        {
+            clientThread.invoke(this::refreshRaidBoardHighlights);
+        }
+
+        if ("notifyWhenInGroup".equals(event.getKey()))
+        {
+            clientThread.invoke(() ->
+            {
+                if (raidGroupMonitor != null && provideConfig().notifyWhenInGroup() == GroupNotificationMode.NONE)
+                {
+                    raidGroupMonitor.reset();
+                }
+            });
+        }
     }
 
     @Subscribe
@@ -445,6 +485,44 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (nativeChanged || pendingChanged)
         {
             refreshPanelPlayers();
+        }
+        refreshRaidBoardHighlights();
+        if (raidGroupMonitor != null)
+        {
+            raidGroupMonitor.refresh(provideConfig().notifyWhenInGroup());
+        }
+    }
+
+    @Subscribe
+    public void onGameStateChanged(GameStateChanged event)
+    {
+        if (raidGroupMonitor != null && (event.getGameState() == GameState.LOGIN_SCREEN
+            || event.getGameState() == GameState.HOPPING))
+        {
+            raidGroupMonitor.reset();
+        }
+    }
+
+    private void notifyRaidGroup(GroupNotificationMode mode, String message, String singleIgnoredName)
+    {
+        if (mode == GroupNotificationMode.NOTIFICATION_AND_CHAT)
+        {
+            notifier.notify(message);
+        }
+        IgnoredPlayer player = singleIgnoredName == null ? null : findIgnoredPlayerByName(singleIgnoredName);
+        if (player != null && !player.getNote().trim().isEmpty())
+        {
+            message = message.substring(0, message.length() - 1)
+                + " for " + Text.escapeJagex(player.getNote().trim()) + ".";
+        }
+        client.addChatMessage(ChatMessageType.CONSOLE, "", message, "");
+    }
+
+    private void refreshRaidBoardHighlights()
+    {
+        if (raidBoardHighlighter != null)
+        {
+            raidBoardHighlighter.refresh(provideConfig().highlightRaidsAndGroups());
         }
     }
 

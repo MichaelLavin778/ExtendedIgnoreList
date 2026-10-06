@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.runelite.api.Client;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.GameState;
 import net.runelite.api.Ignore;
 import net.runelite.api.Menu;
 import net.runelite.api.NameableContainer;
@@ -27,8 +30,13 @@ import net.runelite.api.Player;
 import net.runelite.api.Renderable;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.GameTick;
+import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetType;
 import net.runelite.client.callback.RenderCallbackManager;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.RuneScapeProfile;
@@ -52,6 +60,7 @@ public class ExtendedIgnoreListPluginBehaviorTest
     private ClientToolbar clientToolbar;
     private MenuManager menuManager;
     private RenderCallbackManager renderCallbackManager;
+    private Notifier notifier;
     private Map<String, String> configValues;
     private Map<String, String> sharedValues;
     private Map<String, String> profileValues;
@@ -67,6 +76,7 @@ public class ExtendedIgnoreListPluginBehaviorTest
         clientToolbar = mock(ClientToolbar.class);
         menuManager = mock(MenuManager.class);
         renderCallbackManager = mock(RenderCallbackManager.class);
+        notifier = mock(Notifier.class);
         configValues = new HashMap<>();
         sharedValues = new HashMap<>();
         profileValues = new HashMap<>();
@@ -114,6 +124,7 @@ public class ExtendedIgnoreListPluginBehaviorTest
         setField(plugin, "activeConfig", new TestConfig(configValues));
         setField(plugin, "menuManager", menuManager);
         setField(plugin, "renderCallbackManager", renderCallbackManager);
+        setField(plugin, "notifier", notifier);
     }
 
     @Test
@@ -550,6 +561,156 @@ public class ExtendedIgnoreListPluginBehaviorTest
         verify(configManager, never()).unsetConfiguration("extendedignorelist", SHARED_STORAGE_KEY, "ignoredPlayers");
     }
 
+    @Test
+    public void raidBoardHighlightsMatchSharedAliasesAndRestoreOnRemoval()
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\t");
+        Widget name = mock(Widget.class);
+        when(name.getType()).thenReturn(WidgetType.TEXT);
+        when(name.getText()).thenReturn("<img=1>ALICIA");
+        when(client.getWidget(InterfaceID.ToaLobby.NAMES)).thenReturn(name);
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            verify(name).setText("<col=ff0000><img=1>ALICIA</col>");
+
+            when(name.getText()).thenReturn("<col=ff0000><img=1>ALICIA</col>");
+            plugin.removeIgnoredPlayer("Alice");
+            plugin.onGameTick(new GameTick());
+            verify(name).setText("<img=1>ALICIA");
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
+    @Test
+    public void raidBoardConfigChangesAndShutdownRestoreHighlights()
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\t\t");
+        Widget name = mock(Widget.class);
+        when(name.getType()).thenReturn(WidgetType.TEXT);
+        when(name.getText()).thenReturn("Alice");
+        when(client.getWidget(InterfaceID.TobPartydetails.CURRENT)).thenReturn(name);
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            verify(name).setText("<col=ff0000>Alice</col>");
+            when(name.getText()).thenReturn("<col=ff0000>Alice</col>");
+
+            ConfigChanged event = new ConfigChanged();
+            event.setGroup("extendedignorelist");
+            event.setKey("highlightRaidsAndGroups");
+            setConfigField("highlightRaidsAndGroups", false);
+            plugin.onConfigChanged(event);
+            verify(name).setText("Alice");
+
+            when(name.getText()).thenReturn("Alice");
+            setConfigField("highlightRaidsAndGroups", true);
+            plugin.onConfigChanged(event);
+            verify(name, times(2)).setText("<col=ff0000>Alice</col>");
+            when(name.getText()).thenReturn("<col=ff0000>Alice</col>");
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+        verify(name, times(2)).setText("Alice");
+    }
+
+    @Test
+    public void groupNotificationModesRouteToChatAndNotifierIndependentlyOfHighlights()
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\t");
+        setConfigField("highlightRaidsAndGroups", false);
+        when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
+        when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSLOT)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(1);
+        when(client.getVarcStrValue(VarClientID.TOA_CLIENT_NAME1)).thenReturn("Alicia");
+        String message = "Alicia is on your extended ignore list.";
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            verify(client, never()).addChatMessage(eq(ChatMessageType.CONSOLE), anyString(), anyString(), anyString());
+            verify(notifier, never()).notify(anyString());
+
+            configValues.put("notifyWhenInGroup", GroupNotificationMode.CHAT_ONLY.name());
+            plugin.onGameTick(new GameTick());
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "", message, "");
+            verify(notifier, never()).notify(anyString());
+
+            configValues.put("notifyWhenInGroup", GroupNotificationMode.NONE.name());
+            ConfigChanged event = new ConfigChanged();
+            event.setGroup("extendedignorelist");
+            event.setKey("notifyWhenInGroup");
+            plugin.onConfigChanged(event);
+            configValues.put("notifyWhenInGroup", GroupNotificationMode.NOTIFICATION_AND_CHAT.name());
+            plugin.onGameTick(new GameTick());
+            plugin.onGameTick(new GameTick());
+            verify(notifier).notify(message);
+            verify(client, times(2)).addChatMessage(ChatMessageType.CONSOLE, "", message, "");
+
+            setConfigField("censorName", true);
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(0);
+            plugin.onGameTick(new GameTick());
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(1);
+            plugin.onGameTick(new GameTick());
+            verify(notifier).notify("Someone is on your extended ignore list.");
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Someone is on your extended ignore list.", "");
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
+    @Test
+    public void singleIgnoredPlayerNoteAppearsOnlyInChatIncludingWhenCensored() throws Exception
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\t  rude <br> player  ");
+        configValues.put("notifyWhenInGroup", GroupNotificationMode.NOTIFICATION_AND_CHAT.name());
+        when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
+        when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSLOT)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(1);
+        when(client.getVarcStrValue(VarClientID.TOA_CLIENT_NAME1)).thenReturn("Alicia");
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            verify(notifier).notify("Alicia is on your extended ignore list.");
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Alicia is on your extended ignore list for rude <lt>br<gt> player.", "");
+
+            setConfigField("censorName", true);
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(0);
+            plugin.onGameTick(new GameTick());
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(1);
+            plugin.onGameTick(new GameTick());
+            verify(notifier).notify("Someone is on your extended ignore list.");
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Someone is on your extended ignore list for rude <lt>br<gt> player.", "");
+
+            invoke(plugin, "updatePlayerNote", new Class<?>[] {String.class, String.class}, "Alice", "   ");
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(0);
+            plugin.onGameTick(new GameTick());
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_P1)).thenReturn(1);
+            plugin.onGameTick(new GameTick());
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Someone is on your extended ignore list.", "");
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
     private static ConfigChanged sharedListChanged()
     {
         ConfigChanged event = new ConfigChanged();
@@ -653,6 +814,25 @@ public class ExtendedIgnoreListPluginBehaviorTest
         public boolean ignoreTrades()
         {
             return readBoolean("ignoreTrades", true);
+        }
+
+        @Override
+        public boolean highlightRaidsAndGroups()
+        {
+            return readBoolean("highlightRaidsAndGroups", true);
+        }
+
+        @Override
+        public GroupNotificationMode notifyWhenInGroup()
+        {
+            String value = values.get("notifyWhenInGroup");
+            return value == null ? GroupNotificationMode.NONE : GroupNotificationMode.valueOf(value);
+        }
+
+        @Override
+        public boolean censorName()
+        {
+            return readBoolean("censorName", false);
         }
     }
 }
