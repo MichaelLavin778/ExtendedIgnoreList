@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
+import javax.inject.Named;
 import javax.swing.JOptionPane;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -112,6 +113,10 @@ public class ExtendedIgnoreListPlugin extends Plugin
     @Inject
     private Notifier notifier;
 
+    @Inject
+    @Named("developerMode")
+    private boolean developerMode;
+
     private final Map<String, IgnoredPlayer> ignoredPlayers = new LinkedHashMap<>();
     private final Set<String> ignoredNameIndex = new HashSet<>();
 
@@ -162,6 +167,10 @@ public class ExtendedIgnoreListPlugin extends Plugin
             this::handlePanelRemovePlayer,
             (name, note) -> invokePanelAction(() -> updatePlayerNote(name, note)),
             provideConfig().sortOrder(), this::handleSortOrderChange);
+        if (developerMode)
+        {
+            panel.addDeveloperControls(this::handleClearExtendedList);
+        }
         refreshPanelPlayers();
         syncAddIgnoreMenuItem();
         syncDrawListener();
@@ -310,6 +319,46 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 action.run();
             }
         });
+    }
+
+    private void handleClearExtendedList()
+    {
+        if (developerMode && JOptionPane.showConfirmDialog(
+            panel,
+            "Clear all extended ignore entries, aliases, and notes?\n"
+                + "This clears the shared list for all accounts and profiles and will sync to other computers.\n"
+                + "Native ignores and Friend Notes will not be changed. This cannot be undone.",
+            "Clear Extended List",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION)
+        {
+            invokePanelAction(this::clearExtendedList);
+        }
+    }
+
+    private void clearExtendedList()
+    {
+        if (!developerMode)
+        {
+            return;
+        }
+        pendingNativeIgnoreImportTicks = 0;
+        pendingNativeIgnoreRemovalTicks = 0;
+        pendingNativeAddFallbackName = null;
+        nativeAddObserved = false;
+        nativeIgnoreNamesBeforeAddAttempt.clear();
+        nativeIgnoreNamesSyncedDuringAddAttempt.clear();
+        previousNativeIgnoreNames.clear();
+        nativeIgnoreFingerprint = null;
+        ignoredPlayers.clear();
+        ignoredNameIndex.clear();
+        persistIgnoredPlayers();
+        refreshPanelPlayers();
+        refreshRaidBoardHighlights();
+        if (raidGroupMonitor != null)
+        {
+            raidGroupMonitor.reset();
+        }
     }
 
     public List<IgnoredPlayer> getIgnoredPlayers()

@@ -161,6 +161,32 @@ public class ExtendedIgnoreListPanelTest
         return null;
     }
 
+    @Test
+    public void developerControlsAreAbsentByDefaultAndRequestClearWhenAdded() throws Exception
+    {
+        AtomicInteger clearRequests = new AtomicInteger();
+        AtomicReference<ExtendedIgnoreListPanel> panelRef = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> panelRef.set(new ExtendedIgnoreListPanel(
+            () -> { }, ignored -> { }, (ignored, note) -> { },
+            IgnoreListSortOrder.NEWEST_FIRST, ignored -> { })));
+        ExtendedIgnoreListPanel panel = panelRef.get();
+        assertEquals(java.awt.BorderLayout.class, panel.getLayout().getClass());
+        assertEquals(null, ((java.awt.BorderLayout) panel.getLayout()).getLayoutComponent(
+            java.awt.BorderLayout.SOUTH));
+        SwingUtilities.invokeAndWait(() ->
+        {
+            panel.addDeveloperControls(clearRequests::incrementAndGet);
+            JButton importButton = findButton(panel, "Import ignore list");
+            JButton clearButton = findButton(panel, "Clear extended list (dev)");
+            Container topPanel = importButton.getParent();
+            assertEquals(topPanel, clearButton.getParent());
+            assertEquals(topPanel.getComponentZOrder(importButton) + 2,
+                topPanel.getComponentZOrder(clearButton));
+            clearButton.doClick();
+        });
+        assertEquals(1, clearRequests.get());
+    }
+
     private boolean findLabelText(Component component, String text)
     {
         if (component instanceof JLabel && text.equals(((JLabel) component).getText()))

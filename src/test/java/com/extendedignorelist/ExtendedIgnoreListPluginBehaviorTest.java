@@ -296,6 +296,88 @@ public class ExtendedIgnoreListPluginBehaviorTest
     }
 
     @Test
+    public void developerClearRemovesSharedDataAndCancelsPendingNativeSync() throws Exception
+    {
+        setField(plugin, "developerMode", true);
+        plugin.addIgnoredPlayer("Alice");
+        invoke(plugin, "updatePlayerNote", new Class<?>[] {String.class, String.class}, "Alice", "note");
+        Ignore alice = mock(Ignore.class);
+        when(alice.getName()).thenReturn("Alice");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[] {alice});
+        when(client.getIgnoreContainer()).thenReturn(container);
+        MenuEntry entry = mock(MenuEntry.class);
+        when(entry.getOption()).thenReturn("Add Name");
+        when(client.getVarcStrValue(VarClientID.CHATINPUT)).thenReturn(null, "Alice");
+        plugin.onMenuOptionClicked(new net.runelite.api.events.MenuOptionClicked(entry));
+
+        invokePrivateNoArgs(plugin, "clearExtendedList");
+
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        assertFalse(sharedValues.containsKey("ignoredPlayers"));
+        assertFalse(invokeBoolean(plugin, "isIgnoredPlayerName", new Class<?>[] {String.class}, "Alice"));
+        for (int tick = 0; tick < 35; tick++)
+        {
+            plugin.onGameTick(new GameTick());
+        }
+        plugin.onSessionOpen(new SessionOpen());
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        verify(configManager, never()).unsetConfiguration(eq("friendNotes"), anyString());
+
+        invokePrivateNoArgs(plugin, "handleImportIgnoreList");
+        assertPlayerNames("Alice");
+    }
+
+    @Test
+    public void normalModeCannotClearSharedList() throws Exception
+    {
+        plugin.addIgnoredPlayer("Alice");
+        String snapshot = sharedValues.get("ignoredPlayers");
+        invokePrivateNoArgs(plugin, "clearExtendedList");
+        invokePrivateNoArgs(plugin, "handleClearExtendedList");
+        assertPlayerNames("Alice");
+        assertEquals(snapshot, sharedValues.get("ignoredPlayers"));
+    }
+
+    @Test
+    public void developerButtonIsOnlyPresentInDeveloperMode() throws Exception
+    {
+        plugin.startUp();
+        ExtendedIgnoreListPanel normalPanel = (ExtendedIgnoreListPanel) clientToolbarPanel();
+        assertEquals(null, ((java.awt.BorderLayout) normalPanel.getLayout()).getLayoutComponent(
+            java.awt.BorderLayout.SOUTH));
+        int normalHeaderCount = panelHeader(normalPanel).getComponentCount();
+        plugin.shutDown();
+        setField(plugin, "developerMode", true);
+        plugin.startUp();
+        try
+        {
+            ExtendedIgnoreListPanel developerPanel = (ExtendedIgnoreListPanel) clientToolbarPanel();
+            assertEquals(normalHeaderCount + 2, panelHeader(developerPanel).getComponentCount());
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
+    private Object clientToolbarPanel() throws Exception
+    {
+        Field field = ExtendedIgnoreListPlugin.class.getDeclaredField("panel");
+        field.setAccessible(true);
+        return field.get(plugin);
+    }
+
+    private java.awt.Container panelHeader(ExtendedIgnoreListPanel panel)
+    {
+        java.awt.Container content = (java.awt.Container) ((java.awt.BorderLayout) panel.getLayout())
+            .getLayoutComponent(java.awt.BorderLayout.CENTER);
+        return (java.awt.Container) ((java.awt.BorderLayout) content.getLayout())
+            .getLayoutComponent(java.awt.BorderLayout.NORTH);
+    }
+
+    @Test
     public void additionsFollowAllFourSortOrders() throws Exception
     {
         plugin.addIgnoredPlayer("Charlie");

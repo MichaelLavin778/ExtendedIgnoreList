@@ -164,6 +164,25 @@ public class ExtendedIgnoreListPanel extends PluginPanel
         SwingUtilities.invokeLater(() -> renderPlayers(players));
     }
 
+    public void addDeveloperControls(Runnable clearAction)
+    {
+        JButton clearButton = new JButton("Clear extended list (dev)");
+        clearButton.setFocusPainted(false);
+        clearButton.setBackground(HEADER_BACKGROUND);
+        clearButton.setForeground(PRIMARY_TEXT);
+        clearButton.setBorder(BorderFactory.createLineBorder(LIST_FRAME));
+        clearButton.setToolTipText("Clear all shared extended entries and notes after confirmation");
+        clearButton.addActionListener(event -> clearAction.run());
+        clearButton.setAlignmentX(LEFT_ALIGNMENT);
+        clearButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, clearButton.getPreferredSize().height));
+        Container topPanel = importButton.getParent();
+        int importIndex = topPanel.getComponentZOrder(importButton);
+        topPanel.add(Box.createRigidArea(new Dimension(0, 8)), importIndex + 1);
+        topPanel.add(clearButton, importIndex + 2);
+        topPanel.revalidate();
+        topPanel.repaint();
+    }
+
     public void setSortOrder(IgnoreListSortOrder sortOrder)
     {
         Runnable update = () ->
