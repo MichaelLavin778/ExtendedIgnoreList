@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Client;
 import net.runelite.api.ChatMessageType;
@@ -658,6 +659,137 @@ public class ExtendedIgnoreListPluginBehaviorTest
 
         verify(menu).createMenuEntry(-1);
         verify(extendedEntry).setOption("Add to extended");
+    }
+
+    @Test
+    public void addToExtendedCopiesPreviousNameFriendNoteAndPreservesExistingNote()
+    {
+        Menu menu = mock(Menu.class);
+        MenuEntry nativeEntry = mock(MenuEntry.class);
+        MenuEntry extendedEntry = mock(MenuEntry.class);
+        when(client.getMenu()).thenReturn(menu);
+        when(menu.createMenuEntry(-1)).thenReturn(extendedEntry);
+        when(nativeEntry.getOption()).thenReturn("Delete");
+        when(nativeEntry.getTarget()).thenReturn("<col=ffffff>New Name</col>");
+        when(nativeEntry.getParam1()).thenReturn(InterfaceID.IGNORE << 16);
+        when(extendedEntry.getTarget()).thenReturn("<col=ffffff>New Name</col>");
+        when(extendedEntry.setOption(anyString())).thenReturn(extendedEntry);
+        when(extendedEntry.setTarget(anyString())).thenReturn(extendedEntry);
+        when(extendedEntry.setType(net.runelite.api.MenuAction.RUNELITE)).thenReturn(extendedEntry);
+        AtomicReference<Consumer<MenuEntry>> action = new AtomicReference<>();
+        doAnswer(invocation ->
+        {
+            action.set(invocation.getArgument(0));
+            return extendedEntry;
+        }).when(extendedEntry).onClick(org.mockito.ArgumentMatchers.any());
+        Ignore nativeIgnore = mock(Ignore.class);
+        when(nativeIgnore.getName()).thenReturn("New Name");
+        when(nativeIgnore.getPrevName()).thenReturn("Old Name");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[] {nativeIgnore});
+        when(client.getIgnoreContainer()).thenReturn(container);
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("Old Name")))
+            .thenReturn("original friend note");
+
+        plugin.onMenuEntryAdded(new MenuEntryAdded(nativeEntry));
+        action.get().accept(extendedEntry);
+        assertEquals("original friend note", plugin.getIgnoredPlayers().get(0).getNote());
+        long addedAt = plugin.getIgnoredPlayers().get(0).getAddedAt();
+
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("New Name")))
+            .thenReturn("changed friend note");
+        action.get().accept(extendedEntry);
+        assertEquals("original friend note", plugin.getIgnoredPlayers().get(0).getNote());
+        assertEquals(addedAt, plugin.getIgnoredPlayers().get(0).getAddedAt());
+        verify(configManager, never()).setConfiguration(eq("friendNotes"), anyString(), anyString());
+        verify(configManager, never()).unsetConfiguration(eq("friendNotes"), anyString());
+    }
+
+    @Test
+    public void bulkImportCopiesCurrentNameNotesBeforePreviousNamesAndLeavesMissingNotesEmpty() throws Exception
+    {
+        Ignore alice = mock(Ignore.class);
+        when(alice.getName()).thenReturn("Alice");
+        when(alice.getPrevName()).thenReturn("Alicia");
+        Ignore bob = mock(Ignore.class);
+        when(bob.getName()).thenReturn("Bob");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[] {alice, bob});
+        when(client.getIgnoreContainer()).thenReturn(container);
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("Alice")))
+            .thenReturn("current note");
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("Alicia")))
+            .thenReturn("previous note");
+
+        invokePrivateNoArgs(plugin, "handleImportIgnoreList");
+        assertEquals("current note", findPlayer(plugin.getIgnoredPlayers(), "Alice").getNote());
+        assertEquals("", findPlayer(plugin.getIgnoredPlayers(), "Bob").getNote());
+        assertTrue(sharedValues.get("ignoredPlayers").contains("current note"));
+        plugin.onSessionOpen(new SessionOpen());
+        assertEquals("current note", findPlayer(plugin.getIgnoredPlayers(), "Alice").getNote());
+        verify(configManager, never()).setConfiguration(eq("friendNotes"), anyString(), anyString());
+        verify(configManager, never()).unsetConfiguration(eq("friendNotes"), anyString());
+    }
+
+    @Test
+    public void importCanFillExistingEmptyNotesUsingAliasesWithoutResettingDate() throws Exception
+    {
+        sharedValues.put("ignoredPlayers", "v4\tAlice\tOlder Alice\t\t100\nv4\tBob\t\tcustom note\t90");
+        plugin.onSessionOpen(new SessionOpen());
+        Ignore alice = mock(Ignore.class);
+        when(alice.getName()).thenReturn("Alice");
+        Ignore bob = mock(Ignore.class);
+        when(bob.getName()).thenReturn("Bob");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[] {alice, bob});
+        when(client.getIgnoreContainer()).thenReturn(container);
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("Older Alice")))
+            .thenReturn("alias note");
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("Bob")))
+            .thenReturn("do not overwrite");
+
+        assertTrue(invokeBoolean(plugin, "canImportNativeIgnores", new Class<?>[0]));
+        invokePrivateNoArgs(plugin, "handleImportIgnoreList");
+        assertEquals("alias note", findPlayer(plugin.getIgnoredPlayers(), "Alice").getNote());
+        assertEquals(100, findPlayer(plugin.getIgnoredPlayers(), "Alice").getAddedAt());
+        assertEquals("custom note", findPlayer(plugin.getIgnoredPlayers(), "Bob").getNote());
+        assertFalse(invokeBoolean(plugin, "canImportNativeIgnores", new Class<?>[0]));
+
+        when(configManager.getConfiguration("friendNotes", "note_" + net.runelite.client.util.Text.toJagexName("Older Alice")))
+            .thenReturn("updated elsewhere");
+        plugin.onGameTick(new GameTick());
+        assertEquals("alias note", findPlayer(plugin.getIgnoredPlayers(), "Alice").getNote());
+    }
+
+    @Test
+    public void friendNoteChangesEnableImportWithoutAutomaticallyCopyingNote() throws Exception
+    {
+        plugin.addIgnoredPlayer("Alice");
+        Ignore alice = mock(Ignore.class);
+        when(alice.getName()).thenReturn("Alice");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[] {alice});
+        when(client.getIgnoreContainer()).thenReturn(container);
+        ExtendedIgnoreListPanel panel = mock(ExtendedIgnoreListPanel.class);
+        setField(plugin, "panel", panel);
+        assertFalse(invokeBoolean(plugin, "canImportNativeIgnores", new Class<?>[0]));
+        String noteKey = "note_" + net.runelite.client.util.Text.toJagexName("Alice");
+        when(configManager.getConfiguration("friendNotes", noteKey)).thenReturn("new note");
+        ConfigChanged event = new ConfigChanged();
+        event.setGroup("friendNotes");
+        event.setKey(noteKey);
+
+        plugin.onConfigChanged(event);
+
+        verify(panel).setImportButtonState(true, null);
+        assertEquals("", plugin.getIgnoredPlayers().get(0).getNote());
+        invokePrivateNoArgs(plugin, "handleImportIgnoreList");
+        assertEquals("new note", plugin.getIgnoredPlayers().get(0).getNote());
+        verify(panel).setImportButtonState(false, "No new native ignore list entries or notes to import.");
     }
 
     @Test

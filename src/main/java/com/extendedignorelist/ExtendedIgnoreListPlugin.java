@@ -70,6 +70,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private static final String LEGACY_PLAYER_MENU_OPTION_KEY = "showMenuEntryOption";
     private static final String IGNORED_PLAYERS_CONFIG_KEY = "ignoredPlayers";
     private static final String SORT_ORDER_CONFIG_KEY = "sortOrder";
+    private static final String FRIEND_NOTES_CONFIG_GROUP = "friendNotes";
+    private static final String FRIEND_NOTES_KEY_PREFIX = "note_";
     // A fixed rsprofile namespace uses RuneLite's automatically synced store without following a game account.
     private static final String SHARED_STORAGE_KEY = "rsprofile.extendedignorelist";
     private static final String LEGACY_SERIALIZED_ROW_VERSION = "v2";
@@ -211,6 +213,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     public void addIgnoredPlayer(String playerName)
     {
+        addIgnoredPlayer(playerName, false);
+    }
+
+    private void addIgnoredPlayer(String playerName, boolean importFriendNote)
+    {
         syncIgnoredPlayersWithNativeContainer();
 
         String normalizedName = normalizeName(playerName);
@@ -235,6 +242,10 @@ public class ExtendedIgnoreListPlugin extends Plugin
         reorderedPlayers.putAll(ignoredPlayers);
         ignoredPlayers.clear();
         ignoredPlayers.putAll(reorderedPlayers);
+        if (importFriendNote)
+        {
+            copyFriendNote(trackedPlayer, findNativePreviousName(trackedPlayer));
+        }
         nativeIgnoreFingerprint = null;
         persistIgnoredPlayers();
         refreshPanelPlayers();
@@ -356,6 +367,13 @@ public class ExtendedIgnoreListPlugin extends Plugin
     @Subscribe
     public void onConfigChanged(ConfigChanged event)
     {
+        if (FRIEND_NOTES_CONFIG_GROUP.equals(event.getGroup())
+            && event.getKey().startsWith(FRIEND_NOTES_KEY_PREFIX))
+        {
+            invokePanelAction(this::refreshImportButtonState);
+            return;
+        }
+
         if (!CONFIG_GROUP.equals(event.getGroup()))
         {
             return;
@@ -471,7 +489,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
             .setOption(ADD_TO_EXTENDED_MENU_OPTION)
             .setTarget(event.getTarget())
             .setType(MenuAction.RUNELITE)
-            .onClick(entry -> addIgnoredPlayer(extractPlayerName(entry.getTarget())));
+            .onClick(entry -> addIgnoredPlayer(extractPlayerName(entry.getTarget()), true));
     }
 
     @Subscribe
@@ -710,6 +728,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 ignoredPlayer.addAlias(previousName);
                 changed |= aliasesBefore != ignoredPlayer.getAliases().size();
             }
+            changed |= copyFriendNote(ignoredPlayer, previousName);
         }
 
         if (!importedPlayers.isEmpty())
@@ -731,6 +750,59 @@ public class ExtendedIgnoreListPlugin extends Plugin
         }
 
         return changed;
+    }
+
+    private boolean copyFriendNote(IgnoredPlayer player, String previousName)
+    {
+        if (!player.getNote().isEmpty())
+        {
+            return false;
+        }
+
+        String note = findFriendNote(player, previousName);
+        if (note == null)
+        {
+            return false;
+        }
+        player.setNote(note);
+        return true;
+    }
+
+    private String findFriendNote(IgnoredPlayer player, String previousName)
+    {
+        Set<String> names = new LinkedHashSet<>();
+        names.add(player.getCurrentName());
+        if (previousName != null && !previousName.isEmpty())
+        {
+            names.add(previousName);
+        }
+        names.addAll(player.getAliases());
+        for (String name : names)
+        {
+            String note = configManager.getConfiguration(FRIEND_NOTES_CONFIG_GROUP,
+                FRIEND_NOTES_KEY_PREFIX + Text.toJagexName(name));
+            if (note != null && !note.isEmpty())
+            {
+                return note;
+            }
+        }
+        return null;
+    }
+
+    private String findNativePreviousName(IgnoredPlayer player)
+    {
+        NameableContainer<Ignore> container = client.getIgnoreContainer();
+        if (container != null && container.getMembers() != null)
+        {
+            for (Ignore member : container.getMembers())
+            {
+                if (member != null && matchesAnyTrackedName(player, member.getName(), member.getPrevName()))
+                {
+                    return member.getPrevName();
+                }
+            }
+        }
+        return null;
     }
 
     private void refreshPanelPlayers()
@@ -773,7 +845,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
         if (missingEntries <= 0)
         {
-            panel.setImportButtonState(false, "No new native ignore list entries to import.");
+            panel.setImportButtonState(false, "No new native ignore list entries or notes to import.");
             return;
         }
 
@@ -819,7 +891,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
             }
 
             IgnoredPlayer ignoredPlayer = findIgnoredPlayerByName(currentName);
-            if (ignoredPlayer == null)
+            if (ignoredPlayer == null || (ignoredPlayer.getNote().isEmpty()
+                && findFriendNote(ignoredPlayer, member.getPrevName()) != null))
             {
                 missingEntries++;
             }

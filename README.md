@@ -19,6 +19,7 @@ Extended Ignore List expands RuneScape's native ignore system by maintaining an 
 - Supports left-click row deletion and right-click note editing in the extended list.
 - Deleting a row only removes it from the extended list, not your native ignore list. Native add tracking does not automatically restore deleted rows; explicitly importing the native list or adding that player again can restore them.
 - Stores notes independently in the extended list, with note indicators and saved-note tooltips.
+- `Add to extended` and `Import ignore list` copy available Friend Notes from the active RuneLite configuration profile into empty extended-list notes. Current-name notes take priority, with previous names and tracked aliases as fallbacks. Existing extended notes are never overwritten and Friend Notes are never changed. This is a one-time copy, not ongoing synchronization; the import button also allows filling missing notes on already-tracked native entries.
 
 ## Identity and syncing behavior
 
