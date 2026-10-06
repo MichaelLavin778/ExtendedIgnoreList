@@ -76,7 +76,7 @@ public interface ExtendedIgnoreListConfig extends Config
     @ConfigItem(
         keyName = "highlightRaidsAndGroups",
         name = "Highlight Raids/Groups",
-        description = "Show extended-ignored players in red on Chambers of Xeric, Theatre of Blood, and Tombs of Amascut party boards and party lists",
+        description = "Show extended-ignored players in red on raid party boards and lists, and Barbarian Assault team lists and recruitment scrolls",
         position = 6
     )
     default boolean highlightRaidsAndGroups()
@@ -87,7 +87,7 @@ public interface ExtendedIgnoreListConfig extends Config
     @ConfigItem(
         keyName = "notifyWhenInGroup",
         name = "Notify when in group",
-        description = "Warn when an extended-ignored player is in your raid group, whether they join you or you join them",
+        description = "Warn when an extended-ignored player is in your raid group or Barbarian Assault team, whether they join you or you join them",
         position = 7
     )
     default GroupNotificationMode notifyWhenInGroup()
@@ -98,7 +98,7 @@ public interface ExtendedIgnoreListConfig extends Config
     @ConfigItem(
         keyName = "censorName",
         name = "Censor name",
-        description = "Replace ignored names with Someone or Some people in raid group chat messages and notifications",
+        description = "Replace ignored names with Someone or Some people in group chat messages and notifications",
         position = 8
     )
     default boolean censorName()

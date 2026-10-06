@@ -7,7 +7,7 @@ Extended Ignore List expands RuneScape's native ignore system by maintaining an 
 ## What it does
 
 - Extends ignore capacity beyond the native cap by storing extra ignored names in plugin config.
-- Imports your current native ignore list into the extended list with one click.
+- Imports your current native ignore list into the extended list with one click. Newly imported entries go to the top in native-list order; existing entries keep their order.
 - Mirrors native ignore actions:
 	- `Add ignore` player menu action syncs into extended list.
 	- Native `Add Name` attempts are captured and synced, including fallback when native add fails (for example, native list is full).
@@ -30,9 +30,10 @@ Extended Ignore List expands RuneScape's native ignore system by maintaining an 
 - Hide ignored players from rendering in-scene.
 - Suppress chat visibility checks for ignored names.
 - Hide incoming trade request messages from ignored players.
-- Show extended-ignored players' names in red on Chambers of Xeric, Theatre of Blood, and Tombs of Amascut party boards, member lists, and applicant lists. `Highlight Raid Boards` is enabled by default and can be turned off in the plugin settings.
+- Show extended-ignored players' names in red on Chambers of Xeric, Theatre of Blood, and Tombs of Amascut party boards, member lists, and applicant lists, plus Barbarian Assault current-team lists and recruitment scrolls. `Highlight Raids/Groups` is enabled by default and can be turned off in the plugin settings.
 - Raid-board highlighting matches whole names, including tracked aliases, rather than parts of other players' names. It updates each game tick while a supported list is open and restores the original text when an entry is removed, the feature is disabled, or the plugin is stopped. It does not replace names, change party actions, or alter your native ignore list.
-- `Notify when in group` offers `Notification + chat`, `Chat only`, or `None` (default). Warns when an extended-ignored player or tracked alias is in your own raid group, whether they join you or you join them. RuneLite notifications follow your RuneLite notification settings.
+- `Notify when in group` offers `Notification + chat`, `Chat only` (default), or `None`. Warns when an extended-ignored player or tracked alias is in your own raid group or Barbarian Assault team, whether they join you or you join them. RuneLite notifications follow your RuneLite notification settings.
 - Group warnings use the actual ToB/ToA party slots, not the party board you are browsing or pending applicants. CoX warnings use your own raid sidepanel's full-name roster once you enter the Chambers. A warning is sent once per ignored player's presence, not every tick; leaving and rejoining can trigger another warning. Turning notifications on while already grouped also checks the current roster. Board highlighting and group warnings work independently.
+- Barbarian Assault warnings use the current-team overlay in the recruitment rooms, not unaccepted recruitment scrolls. Warning state is retained while that roster is unavailable between waves; visible team changes, leaving BA, or logout reset it. Censoring and single-player notes apply to BA warnings too.
 - `Censor name`, directly below `Notify when in group`, is off by default. When enabled, group alerts say `Someone is on your extended ignore list.` or `Some people are on your extended ignore list.` instead of listing names. This applies to both chat messages and notifications, not raid-board highlighting.
 - When exactly one ignored player is detected in your raid group and they have a note, the chat alert includes `for {note}.` (also when names are censored). RuneLite notifications do not include notes, and notes are omitted when multiple ignored players are present.

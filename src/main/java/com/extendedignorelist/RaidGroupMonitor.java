@@ -10,6 +10,8 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.Player;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.gameval.VarbitID;
@@ -41,6 +43,14 @@ final class RaidGroupMonitor
     // raids_sidepanel_addline stores the untruncated name at child row * 7 + 4.
     private static final int COX_ROW_SIZE = 7;
     private static final int COX_FULL_NAME_OFFSET = 4;
+    private static final int BA_LOBBY_REGION_ID = 10322;
+    private static final int[] BA_TEAM_NAMES = {
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_2_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_3_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_4_NAME
+    };
 
     private final Client client;
     private final Predicate<String> isIgnoredName;
@@ -76,6 +86,40 @@ final class RaidGroupMonitor
         check(Raid.TOA, readParty(VarbitID.TOA_CLIENT_PARTYSTATUS, VarbitID.TOA_CLIENT_PARTYSLOT,
             TOA_NAMES, TOA_MEMBERS), mode);
         check(Raid.COX, readChambersParty(), mode);
+        check(Raid.BA, readBarbarianAssaultTeam(), mode);
+    }
+
+    private List<String> readBarbarianAssaultTeam()
+    {
+        List<String> team = new ArrayList<>();
+        boolean rosterAvailable = false;
+        for (int component : BA_TEAM_NAMES)
+        {
+            Widget name = client.getWidget(component);
+            if (name != null && !name.isHidden())
+            {
+                rosterAvailable = true;
+                String text = name.getText();
+                if (text != null && !"-----".equals(Text.removeTags(text).trim()))
+                {
+                    team.add(text);
+                }
+            }
+        }
+        if (rosterAvailable)
+        {
+            return team;
+        }
+
+        // The recruitment roster disappears during waves; absence is not a team departure.
+        Player localPlayer = client.getLocalPlayer();
+        WorldPoint location = localPlayer == null ? null : localPlayer.getWorldLocation();
+        if (client.getVarbitValue(VarbitID.BARBASSAULT_AREAEXIT_PENDING) == 1
+            || (location != null && location.getRegionID() == BA_LOBBY_REGION_ID))
+        {
+            return null;
+        }
+        return team;
     }
 
     private List<String> readParty(int statusVarbit, int slotVarbit, int[] names, int[] members)
@@ -169,7 +213,8 @@ final class RaidGroupMonitor
     {
         TOB,
         TOA,
-        COX
+        COX,
+        BA
     }
 
     @FunctionalInterface

@@ -612,6 +612,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
         }
 
         boolean changed = false;
+        Map<String, IgnoredPlayer> importedPlayers = new LinkedHashMap<>();
         for (Ignore member : members)
         {
             if (member == null)
@@ -630,6 +631,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
             {
                 ignoredPlayer = new IgnoredPlayer(currentName);
                 ignoredPlayers.put(normalizeName(currentName), ignoredPlayer);
+                importedPlayers.put(normalizeName(currentName), ignoredPlayer);
                 changed = true;
             }
 
@@ -640,6 +642,13 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 ignoredPlayer.addAlias(previousName);
                 changed |= aliasesBefore != ignoredPlayer.getAliases().size();
             }
+        }
+
+        if (!importedPlayers.isEmpty())
+        {
+            importedPlayers.putAll(ignoredPlayers);
+            ignoredPlayers.clear();
+            ignoredPlayers.putAll(importedPlayers);
         }
 
         if (changed)

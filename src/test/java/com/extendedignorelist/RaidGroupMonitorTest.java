@@ -12,6 +12,7 @@ import java.util.Set;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Player;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.gameval.VarbitID;
@@ -257,6 +258,89 @@ public class RaidGroupMonitorTest
         monitor.reset();
         monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
         assertEquals("Alice, Bob are on your extended ignore list.", messages.get(2));
+    }
+
+    @Test
+    public void barbarianAssaultOwnTeamMatchesAliasesAndIgnoresSelfAndEmptySlots()
+    {
+        ignoredNames.add("old alice");
+        ignoredNames.add("me");
+        ignoredNames.add("-----");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME, "Me");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
+            "<col=ffa81f>OLD\u00a0Alice</col>");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_2_NAME, "-----");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_3_NAME, "Alice Prime");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_4_NAME, "");
+
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+
+        assertEquals(List.of("OLD Alice is on your extended ignore list."), messages);
+        assertEquals("OLD Alice", singleIgnoredNames.get(0));
+    }
+
+    @Test
+    public void barbarianAssaultUnacceptedScrollAndHiddenRosterDoNotNotify()
+    {
+        baName(InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN1, "Alice");
+        Widget hidden = baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME, "Alice");
+        when(hidden.isHidden()).thenReturn(true);
+
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+
+        assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    public void barbarianAssaultStateSurvivesWavesAndResetsOnTeamChangesOrLeaving()
+    {
+        int component = InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME;
+        Widget name = baName(component, "Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getWidget(component)).thenReturn(null);
+        when(client.getVarbitValue(VarbitID.BARBASSAULT_AREAEXIT_PENDING)).thenReturn(1);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getVarbitValue(VarbitID.BARBASSAULT_AREAEXIT_PENDING)).thenReturn(0);
+        when(client.getLocalPlayer().getWorldLocation()).thenReturn(new WorldPoint(2576, 5264, 0));
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getWidget(component)).thenReturn(name);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(1, messages.size());
+
+        when(name.getText()).thenReturn("-----");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(name.getText()).thenReturn("Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(2, messages.size());
+
+        when(client.getWidget(component)).thenReturn(null);
+        when(client.getLocalPlayer().getWorldLocation()).thenReturn(new WorldPoint(3200, 3200, 0));
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getWidget(component)).thenReturn(name);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(3, messages.size());
+    }
+
+    @Test
+    public void barbarianAssaultRespectsModesCensoringAndMultipleMatches()
+    {
+        censorName = true;
+        ignoredNames.add("bob");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME, "Alice");
+        baName(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME, "Bob");
+        monitor.refresh(GroupNotificationMode.NONE);
+        assertTrue(messages.isEmpty());
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(List.of("Some people are on your extended ignore list."), messages);
+        assertEquals(null, singleIgnoredNames.get(0));
+    }
+
+    private Widget baName(int component, String name)
+    {
+        Widget widget = text(name);
+        when(client.getWidget(component)).thenReturn(widget);
+        return widget;
     }
 
     private void tobParty(String name)

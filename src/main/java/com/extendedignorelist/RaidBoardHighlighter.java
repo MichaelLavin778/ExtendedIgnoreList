@@ -25,7 +25,22 @@ final class RaidBoardHighlighter
         InterfaceID.ToaPartylist.LIST,
         InterfaceID.ToaPartydetails.MEMBERS_LIST,
         InterfaceID.ToaPartydetails.APPLICANTS_LIST,
-        InterfaceID.ToaLobby.NAMES
+        InterfaceID.ToaLobby.NAMES,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_2_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_3_NAME,
+        InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_4_NAME,
+        InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN1,
+        InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN2,
+        InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN3,
+        InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN4,
+        InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN5,
+        InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN1,
+        InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN2,
+        InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN3,
+        InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN4,
+        InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN5
     };
     private static final Pattern COLOR_TAGS = Pattern.compile("</?col(?:=[^>]*)?>", Pattern.CASE_INSENSITIVE);
     private static final String RED_PREFIX = "<col=ff0000>";

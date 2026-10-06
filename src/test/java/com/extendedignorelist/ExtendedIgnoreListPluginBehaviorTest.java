@@ -183,6 +183,39 @@ public class ExtendedIgnoreListPluginBehaviorTest
         assertNotNull(findPlayer(players, "Bob"));
         assertTrue(findPlayer(players, "Bob").getAliases().isEmpty());
         assertTrue(findPlayer(players, "Alice").getAliases().contains("Alicia"));
+        assertEquals("Bob", players.get(0).getCurrentName());
+        assertEquals("Alice", players.get(1).getCurrentName());
+    }
+
+    @Test
+    public void importButtonPrependsNewEntriesInNativeOrderAndPreservesExistingOrder() throws Exception
+    {
+        plugin.addIgnoredPlayer("Alice");
+        plugin.addIgnoredPlayer("Zoe");
+        Ignore alice = mock(Ignore.class);
+        when(alice.getName()).thenReturn("Alice");
+        Ignore bob = mock(Ignore.class);
+        when(bob.getName()).thenReturn("Bob");
+        Ignore charlie = mock(Ignore.class);
+        when(charlie.getName()).thenReturn("Charlie");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> ignoreContainer = mock(NameableContainer.class);
+        when(ignoreContainer.getMembers()).thenReturn(new Ignore[] {alice, bob, charlie});
+        when(client.getIgnoreContainer()).thenReturn(ignoreContainer);
+
+        invokePrivateNoArgs(plugin, "handleImportIgnoreList");
+
+        String expected = "v3\tBob\t\t\nv3\tCharlie\t\t\nv3\tZoe\t\t\nv3\tAlice\t\t";
+        assertEquals(expected, sharedValues.get("ignoredPlayers"));
+        invokePrivateNoArgs(plugin, "importMissingNativeIgnores");
+        assertEquals(expected, sharedValues.get("ignoredPlayers"));
+        plugin.onSessionOpen(new SessionOpen());
+        List<IgnoredPlayer> players = plugin.getIgnoredPlayers();
+        assertEquals(4, players.size());
+        assertEquals("Bob", players.get(0).getCurrentName());
+        assertEquals("Charlie", players.get(1).getCurrentName());
+        assertEquals("Zoe", players.get(2).getCurrentName());
+        assertEquals("Alice", players.get(3).getCurrentName());
     }
 
     @Test
@@ -704,6 +737,33 @@ public class ExtendedIgnoreListPluginBehaviorTest
             plugin.onGameTick(new GameTick());
             verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
                 "Someone is on your extended ignore list.", "");
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
+    @Test
+    public void barbarianAssaultAlertsUseCensoringAndNotesWithoutRaidHighlighting()
+    {
+        sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\tleft the team");
+        configValues.put("notifyWhenInGroup", GroupNotificationMode.NOTIFICATION_AND_CHAT.name());
+        setConfigField("highlightRaidsAndGroups", false);
+        setConfigField("censorName", true);
+        when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
+        Widget member = mock(Widget.class);
+        when(member.getText()).thenReturn("Alicia");
+        when(client.getWidget(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME))
+            .thenReturn(member);
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            plugin.onGameTick(new GameTick());
+            verify(notifier).notify("Someone is on your extended ignore list.");
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Someone is on your extended ignore list for left the team.", "");
         }
         finally
         {

@@ -48,7 +48,22 @@ public class RaidBoardHighlighterTest
             InterfaceID.ToaPartylist.LIST,
             InterfaceID.ToaPartydetails.MEMBERS_LIST,
             InterfaceID.ToaPartydetails.APPLICANTS_LIST,
-            InterfaceID.ToaLobby.NAMES
+            InterfaceID.ToaLobby.NAMES,
+            InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME,
+            InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
+            InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_2_NAME,
+            InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_3_NAME,
+            InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_4_NAME,
+            InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN1,
+            InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN2,
+            InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN3,
+            InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN4,
+            InterfaceID.BarbassaultScrollPl1.BARBASSAULT_SCROLL_PL1_TN5,
+            InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN1,
+            InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN2,
+            InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN3,
+            InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN4,
+            InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN5
         };
         for (int component : components)
         {
@@ -223,6 +238,23 @@ public class RaidBoardHighlighterTest
         highlighter.restore();
 
         verify(name, never()).setText(anyString());
+    }
+
+    @Test
+    public void barbarianAssaultNameHighlightRestoresAndDoesNotMatchPartialNames()
+    {
+        Widget name = textWidget("<col=ffa81f>Alice</col>");
+        Widget partialName = textWidget("Alice Prime");
+        when(client.getWidget(InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME))
+            .thenReturn(name);
+        when(client.getWidget(InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN1))
+            .thenReturn(partialName);
+
+        highlighter.refresh(true);
+        assertEquals("<col=ff0000>Alice</col>", name.getText());
+        verify(partialName, never()).setText(anyString());
+        highlighter.refresh(false);
+        assertEquals("<col=ffa81f>Alice</col>", name.getText());
     }
 
     private void show(Widget... names)
