@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -730,15 +731,21 @@ public class ExtendedIgnoreListPlugin extends Plugin
             return false;
         }
 
-        boolean changed = false;
-        Map<String, IgnoredPlayer> importedPlayers = new LinkedHashMap<>();
+        List<Ignore> legacyOrderedMembers = new ArrayList<>();
         for (Ignore member : members)
         {
-            if (member == null)
+            if (member != null)
             {
-                continue;
+                legacyOrderedMembers.add(member);
             }
+        }
+        // Ignore's natural comparison uses native insertion order, not the active UI sort.
+        legacyOrderedMembers.sort(Comparator.reverseOrder());
 
+        boolean changed = false;
+        Map<String, IgnoredPlayer> importedPlayers = new LinkedHashMap<>();
+        for (Ignore member : legacyOrderedMembers)
+        {
             String currentName = member.getName();
             if (currentName == null || currentName.isEmpty())
             {

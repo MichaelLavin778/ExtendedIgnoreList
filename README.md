@@ -10,7 +10,7 @@ Extended Ignore List expands RuneScape's native ignore system by maintaining an 
 - Imports your current native ignore list into the extended list with one click. Imports and individual additions follow the selected sort order.
 - Offers a remembered panel dropdown for `Name A-Z`, `Name Z-A`, `Oldest first`, and `Newest first` (default). New entries appear alphabetically in name modes, at the bottom in oldest-first mode, or at the top in newest-first mode.
 - Quietly saves each entry's date added; dates are not shown in the panel. Editing notes, tracking a rename, or adding an already-tracked entry does not reset its date. Removing and re-adding an entry gives it a new date.
-- Preserves the existing list's relative newest-to-oldest order when migrating entries without dates. These assigned migration timestamps are not their actual historical addition dates. Bulk imports retain native-list order within the new batch in newest-first mode and reverse that batch in oldest-first mode.
+- Preserves the existing list's relative newest-to-oldest order when migrating entries without dates. These assigned migration timestamps are not their actual historical addition dates. New entries in a bulk import follow the native legacy addition order regardless of either list's selected sort: newest-first mode shows the newest native entry first, and oldest-first mode reverses that batch. Importing does not change the native sort or existing extended entries' saved dates; native entries do not expose actual historical addition dates.
 - Mirrors native ignore actions:
 	- `Add ignore` player menu action syncs into extended list.
 	- Native `Add Name` attempts are captured and synced, including fallback when native add fails (for example, native list is full).

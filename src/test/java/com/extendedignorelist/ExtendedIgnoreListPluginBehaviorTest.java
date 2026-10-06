@@ -649,6 +649,86 @@ public class ExtendedIgnoreListPluginBehaviorTest
     }
 
     @Test
+    public void importsUseNativeLegacyOrderRegardlessOfNativeAndExtendedSorts() throws Exception
+    {
+        Ignore oldest = mock(Ignore.class);
+        when(oldest.getName()).thenReturn("Zoe");
+        when(oldest.getPrevName()).thenReturn("Zoya");
+        Ignore middle = mock(Ignore.class);
+        when(middle.getName()).thenReturn("Amy");
+        Ignore newest = mock(Ignore.class);
+        when(newest.getName()).thenReturn("Liam");
+        List<Ignore> legacyOldestFirst = Arrays.asList(oldest, middle, newest);
+        for (int index = 0; index < legacyOldestFirst.size(); index++)
+        {
+            int legacyIndex = index;
+            when(legacyOldestFirst.get(index).compareTo(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> Integer.compare(legacyIndex,
+                    legacyOldestFirst.indexOf(invocation.getArgument(0))));
+        }
+        when(configManager.getConfiguration("friendNotes",
+            "note_" + net.runelite.client.util.Text.toJagexName("Zoya"))).thenReturn("legacy note");
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(client.getIgnoreContainer()).thenReturn(container);
+        Ignore[][] nativeDisplayOrders = {
+            {middle, newest, oldest},
+            {oldest, newest, middle},
+            {oldest, middle, newest},
+            {newest, middle, oldest},
+            {null, middle, null, oldest, newest}
+        };
+
+        for (Ignore[] nativeDisplayOrder : nativeDisplayOrders)
+        {
+            for (IgnoreListSortOrder extendedSort : IgnoreListSortOrder.values())
+            {
+                sharedValues.clear();
+                when(client.getIgnoreContainer()).thenReturn(null);
+                invokePrivateNoArgs(plugin, "loadIgnoredPlayersForCurrentSession");
+                plugin.addIgnoredPlayer("Existing");
+                long existingAddedAt = plugin.getIgnoredPlayers().get(0).getAddedAt();
+                when(client.getIgnoreContainer()).thenReturn(container);
+                when(container.getMembers()).thenReturn(nativeDisplayOrder);
+                Ignore[] originalNativeOrder = nativeDisplayOrder.clone();
+                configValues.put("sortOrder", extendedSort.name());
+
+                invokePrivateNoArgs(plugin, "handleImportIgnoreList");
+
+                long oldestAddedAt = findPlayer(plugin.getIgnoredPlayers(), "Zoe").getAddedAt();
+                long middleAddedAt = findPlayer(plugin.getIgnoredPlayers(), "Amy").getAddedAt();
+                long newestAddedAt = findPlayer(plugin.getIgnoredPlayers(), "Liam").getAddedAt();
+                assertTrue(oldestAddedAt > existingAddedAt);
+                assertTrue(middleAddedAt > oldestAddedAt);
+                assertTrue(newestAddedAt > middleAddedAt);
+                assertEquals("legacy note", findPlayer(plugin.getIgnoredPlayers(), "Zoe").getNote());
+                assertEquals(existingAddedAt, findPlayer(plugin.getIgnoredPlayers(), "Existing").getAddedAt());
+                assertTrue(Arrays.equals(originalNativeOrder, container.getMembers()));
+                if (extendedSort == IgnoreListSortOrder.NAME_ASCENDING)
+                {
+                    assertPlayerNames("Amy", "Existing", "Liam", "Zoe");
+                }
+                else if (extendedSort == IgnoreListSortOrder.NAME_DESCENDING)
+                {
+                    assertPlayerNames("Zoe", "Liam", "Existing", "Amy");
+                }
+
+                configValues.put("sortOrder", IgnoreListSortOrder.NEWEST_FIRST.name());
+                assertPlayerNames("Liam", "Amy", "Zoe", "Existing");
+                configValues.put("sortOrder", IgnoreListSortOrder.OLDEST_FIRST.name());
+                assertPlayerNames("Existing", "Zoe", "Amy", "Liam");
+                plugin.onSessionOpen(new SessionOpen());
+                assertPlayerNames("Existing", "Zoe", "Amy", "Liam");
+                assertEquals(newestAddedAt, findPlayer(plugin.getIgnoredPlayers(), "Liam").getAddedAt());
+                invokePrivateNoArgs(plugin, "importMissingNativeIgnores");
+                assertEquals(oldestAddedAt, findPlayer(plugin.getIgnoredPlayers(), "Zoe").getAddedAt());
+                assertEquals(middleAddedAt, findPlayer(plugin.getIgnoredPlayers(), "Amy").getAddedAt());
+                assertEquals(newestAddedAt, findPlayer(plugin.getIgnoredPlayers(), "Liam").getAddedAt());
+            }
+        }
+    }
+
+    @Test
     public void importingDuplicateNativeEntriesCreatesOneRow() throws Exception
     {
         Ignore firstAlice = mock(Ignore.class);
