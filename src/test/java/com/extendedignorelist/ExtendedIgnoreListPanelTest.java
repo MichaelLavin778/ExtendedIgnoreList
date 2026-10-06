@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.awt.Container;
 import java.awt.event.MouseEvent;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
@@ -30,7 +31,8 @@ public class ExtendedIgnoreListPanelTest
     {
         AtomicInteger importClicks = new AtomicInteger();
         AtomicReference<String> removedPlayer = new AtomicReference<>();
-        ExtendedIgnoreListPanel panel = new ExtendedIgnoreListPanel(importClicks::incrementAndGet, removedPlayer::set, (ignored, note) -> { });
+        ExtendedIgnoreListPanel panel = new ExtendedIgnoreListPanel(importClicks::incrementAndGet,
+            removedPlayer::set, (ignored, note) -> { }, IgnoreListSortOrder.NEWEST_FIRST, ignored -> { });
 
         List<IgnoredPlayer> players = Arrays.asList(
             new IgnoredPlayer("Alice", Collections.singletonList("Alicia")),
@@ -49,7 +51,8 @@ public class ExtendedIgnoreListPanelTest
     public void rowClickInvokesCallbackWithCurrentName() throws Exception
     {
         AtomicReference<String> removedPlayer = new AtomicReference<>();
-        ExtendedIgnoreListPanel panel = new ExtendedIgnoreListPanel(() -> { }, removedPlayer::set, (ignored, note) -> { });
+        ExtendedIgnoreListPanel panel = new ExtendedIgnoreListPanel(() -> { }, removedPlayer::set,
+            (ignored, note) -> { }, IgnoreListSortOrder.NEWEST_FIRST, ignored -> { });
         SwingUtilities.invokeAndWait(() -> panel.setPlayers(Collections.singletonList(new IgnoredPlayer("Charlie"))));
 
         JLabel nameLabel = findLabel(panel, "Charlie");
@@ -76,7 +79,8 @@ public class ExtendedIgnoreListPanelTest
     public void importButtonStateReflectsAvailability() throws Exception
     {
         AtomicReference<ExtendedIgnoreListPanel> panelRef = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> panelRef.set(new ExtendedIgnoreListPanel(() -> { }, ignored -> { }, (ignored, note) -> { })));
+        SwingUtilities.invokeAndWait(() -> panelRef.set(new ExtendedIgnoreListPanel(() -> { }, ignored -> { },
+            (ignored, note) -> { }, IgnoreListSortOrder.NEWEST_FIRST, ignored -> { })));
         ExtendedIgnoreListPanel panel = panelRef.get();
         JButton importButton = findButton(panel, "Import ignore list");
 
@@ -96,7 +100,8 @@ public class ExtendedIgnoreListPanelTest
     @Test
     public void notedRowsShowNoteIndicatorAndInteractionHelp() throws Exception
     {
-        ExtendedIgnoreListPanel panel = new ExtendedIgnoreListPanel(() -> { }, ignored -> { }, (ignored, note) -> { });
+        ExtendedIgnoreListPanel panel = new ExtendedIgnoreListPanel(() -> { }, ignored -> { },
+            (ignored, note) -> { }, IgnoreListSortOrder.NEWEST_FIRST, ignored -> { });
         IgnoredPlayer player = new IgnoredPlayer("Dana");
         player.setNote("Follow up later");
 
@@ -105,6 +110,55 @@ public class ExtendedIgnoreListPanelTest
         assertTrue(findLabelText(panel, "\u25A4"));
         assertTrue(findLabelText(panel, "Left-click: delete"));
         assertTrue(findLabelText(panel, "Right-click: edit note"));
+        Container helpPanel = findLabel(panel, "Right-click: edit note").getParent();
+        Container sortPanel = findSortSelector(panel).getParent();
+        Container topPanel = helpPanel.getParent();
+        assertEquals(topPanel, sortPanel.getParent());
+        assertTrue(topPanel.getComponentZOrder(helpPanel) < topPanel.getComponentZOrder(sortPanel));
+    }
+
+    @Test
+    public void sortSelectorRestoresSelectionAndOnlyNotifiesForUserChanges() throws Exception
+    {
+        AtomicReference<IgnoreListSortOrder> selected = new AtomicReference<>();
+        AtomicReference<ExtendedIgnoreListPanel> panelRef = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> panelRef.set(new ExtendedIgnoreListPanel(
+            () -> { }, ignored -> { }, (ignored, note) -> { },
+            IgnoreListSortOrder.NAME_DESCENDING, selected::set)));
+        ExtendedIgnoreListPanel panel = panelRef.get();
+        JComboBox<?> selector = findSortSelector(panel);
+        assertEquals(4, selector.getItemCount());
+        assertEquals(IgnoreListSortOrder.NAME_DESCENDING, selector.getSelectedItem());
+        assertEquals(null, selected.get());
+
+        SwingUtilities.invokeAndWait(() -> selector.setSelectedItem(IgnoreListSortOrder.OLDEST_FIRST));
+        assertEquals(IgnoreListSortOrder.OLDEST_FIRST, selected.get());
+
+        selected.set(null);
+        panel.setSortOrder(IgnoreListSortOrder.NEWEST_FIRST);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(IgnoreListSortOrder.NEWEST_FIRST, selector.getSelectedItem());
+        assertEquals(null, selected.get());
+    }
+
+    private JComboBox<?> findSortSelector(Container container)
+    {
+        for (Component child : container.getComponents())
+        {
+            if (child instanceof JComboBox)
+            {
+                return (JComboBox<?>) child;
+            }
+            if (child instanceof Container)
+            {
+                JComboBox<?> selector = findSortSelector((Container) child);
+                if (selector != null)
+                {
+                    return selector;
+                }
+            }
+        }
+        return null;
     }
 
     private boolean findLabelText(Component component, String text)

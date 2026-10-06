@@ -7,19 +7,23 @@ Extended Ignore List expands RuneScape's native ignore system by maintaining an 
 ## What it does
 
 - Extends ignore capacity beyond the native cap by storing extra ignored names in plugin config.
-- Imports your current native ignore list into the extended list with one click. Newly imported entries go to the top in native-list order; existing entries keep their order.
+- Imports your current native ignore list into the extended list with one click. Imports and individual additions follow the selected sort order.
+- Offers a remembered panel dropdown for `Name A-Z`, `Name Z-A`, `Oldest first`, and `Newest first` (default). New entries appear alphabetically in name modes, at the bottom in oldest-first mode, or at the top in newest-first mode.
+- Quietly saves each entry's date added; dates are not shown in the panel. Editing notes, tracking a rename, or adding an already-tracked entry does not reset its date. Removing and re-adding an entry gives it a new date.
+- Preserves the existing list's relative newest-to-oldest order when migrating entries without dates. These assigned migration timestamps are not their actual historical addition dates. Bulk imports retain native-list order within the new batch in newest-first mode and reverse that batch in oldest-first mode.
 - Mirrors native ignore actions:
 	- `Add ignore` player menu action syncs into extended list.
 	- Native `Add Name` attempts are captured and synced, including fallback when native add fails (for example, native list is full).
 	- Native `Del Name` / remove-ignore sync can remove from extended list when `Sync Remove ignore` is enabled.
 - Supports adding names from the native ignore-list context menu with `Add to extended`.
 - Supports left-click row deletion and right-click note editing in the extended list.
+- Deleting a row only removes it from the extended list, not your native ignore list. Native add tracking does not automatically restore deleted rows; explicitly importing the native list or adding that player again can restore them.
 - Stores notes independently in the extended list, with note indicators and saved-note tooltips.
 
 ## Identity and syncing behavior
 
 - Tracks rename history using aliases and native ignore current/previous names, so ignored players stay matched after name changes.
-- Shares the extended list, aliases, and notes across RuneScape accounts AND RuneLite configuration profiles. Feature settings (such as hiding players) remain configuration-profile-specific.
+- Shares the extended list, aliases, notes, and dates added across RuneScape accounts AND RuneLite configuration profiles. Feature settings (including the panel sort selection) remain configuration-profile-specific.
 - To share across computers, use the updated plugin and sign into the same RuneLite account on every computer. Entries use a fixed plugin namespace in RuneLite's automatically synced shared store; the selected configuration profiles do not need to match.
 - Uses RuneLite's normal cloud sync timing, not instant live synchronization. Allow the source client to sync (or close it normally), then restart the other client to receive changes. Avoid editing the list on both computers at once: the list is stored as one setting, so competing edits can overwrite each other.
 - Automatically merges existing account-specific extended lists and the active configuration profile's old list into the shared store. Switch through other configuration profiles once to migrate their old lists too. Matching names/aliases are combined; distinct notes are joined with ` / `. Migrated entries are removed from their old storage so deleted shared entries are not re-imported later.

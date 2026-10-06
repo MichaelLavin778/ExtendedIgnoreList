@@ -9,6 +9,7 @@ public class IgnoredPlayer
 {
     private String currentName;
     private String note = "";
+    private long addedAt;
     private final LinkedHashSet<String> aliases = new LinkedHashSet<>();
 
     public IgnoredPlayer(String currentName)
@@ -36,6 +37,16 @@ public class IgnoredPlayer
     public void setCurrentName(String currentName)
     {
         this.currentName = currentName;
+    }
+
+    public long getAddedAt()
+    {
+        return addedAt;
+    }
+
+    void setAddedAt(long addedAt)
+    {
+        this.addedAt = addedAt;
     }
 
     public String getNote()

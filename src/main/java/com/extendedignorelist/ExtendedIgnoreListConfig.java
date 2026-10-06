@@ -105,4 +105,15 @@ public interface ExtendedIgnoreListConfig extends Config
     {
         return false;
     }
+
+    @ConfigItem(
+        keyName = "sortOrder",
+        name = "Sort order",
+        description = "Remember the extended ignore panel's selected sort order",
+        hidden = true
+    )
+    default IgnoreListSortOrder sortOrder()
+    {
+        return IgnoreListSortOrder.NEWEST_FIRST;
+    }
 }

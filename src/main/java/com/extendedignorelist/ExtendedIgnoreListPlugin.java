@@ -69,10 +69,12 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private static final String PLAYER_MENU_OPTION_KEY = "playerMenuOption";
     private static final String LEGACY_PLAYER_MENU_OPTION_KEY = "showMenuEntryOption";
     private static final String IGNORED_PLAYERS_CONFIG_KEY = "ignoredPlayers";
+    private static final String SORT_ORDER_CONFIG_KEY = "sortOrder";
     // A fixed rsprofile namespace uses RuneLite's automatically synced store without following a game account.
     private static final String SHARED_STORAGE_KEY = "rsprofile.extendedignorelist";
     private static final String LEGACY_SERIALIZED_ROW_VERSION = "v2";
-    private static final String SERIALIZED_ROW_VERSION = "v3";
+    private static final String NOTES_SERIALIZED_ROW_VERSION = "v3";
+    private static final String SERIALIZED_ROW_VERSION = "v4";
     private static final String CHAT_FILTER_CHECK_EVENT = "chatFilterCheck";
     private static final int NATIVE_ACTION_SYNC_TICKS = 30;
 
@@ -124,6 +126,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private final Set<String> previousNativeIgnoreNames = new HashSet<>();
     private String nativeIgnoreFingerprint;
     private final Set<String> nativeIgnoreNamesBeforeAddAttempt = new HashSet<>();
+    private final Set<String> nativeIgnoreNamesSyncedDuringAddAttempt = new HashSet<>();
     private boolean nativeAddObserved;
     private String pendingNativeAddFallbackName;
     private String nativeAddDialogBaseline;
@@ -153,7 +156,10 @@ public class ExtendedIgnoreListPlugin extends Plugin
         raidBoardHighlighter = new RaidBoardHighlighter(client, this::isIgnoredPlayerNameFast);
         raidGroupMonitor = new RaidGroupMonitor(client, this::isIgnoredPlayerNameFast,
             () -> provideConfig().censorName(), this::notifyRaidGroup);
-        panel = new ExtendedIgnoreListPanel(this::handleImportIgnoreList, this::handlePanelRemovePlayer, this::updatePlayerNote);
+        panel = new ExtendedIgnoreListPanel(() -> invokePanelAction(this::handleImportIgnoreList),
+            this::handlePanelRemovePlayer,
+            (name, note) -> invokePanelAction(() -> updatePlayerNote(name, note)),
+            provideConfig().sortOrder(), this::handleSortOrderChange);
         refreshPanelPlayers();
         syncAddIgnoreMenuItem();
         syncDrawListener();
@@ -217,6 +223,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (ignoredPlayer == null)
         {
             ignoredPlayer = new IgnoredPlayer(playerName);
+            ignoredPlayer.setAddedAt(nextAddedAt());
         }
 
         IgnoredPlayer trackedPlayer = ignoredPlayer;
@@ -240,6 +247,14 @@ public class ExtendedIgnoreListPlugin extends Plugin
         IgnoredPlayer ignoredPlayer = findIgnoredPlayerByName(playerName);
         if (ignoredPlayer != null)
         {
+            if (pendingNativeIgnoreImportTicks > 0)
+            {
+                nativeIgnoreNamesSyncedDuringAddAttempt.add(normalizeName(ignoredPlayer.getCurrentName()));
+                for (String alias : ignoredPlayer.getAliases())
+                {
+                    nativeIgnoreNamesSyncedDuringAddAttempt.add(normalizeName(alias));
+                }
+            }
             ignoredPlayers.entrySet().removeIf(entry -> entry.getValue() == ignoredPlayer);
             nativeIgnoreFingerprint = null;
             persistIgnoredPlayers();
@@ -271,13 +286,38 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 JOptionPane.QUESTION_MESSAGE
             ) == JOptionPane.YES_OPTION)
         {
-            removeIgnoredPlayer(playerName);
+            invokePanelAction(() -> removeIgnoredPlayer(playerName));
         }
+    }
+
+    private void invokePanelAction(Runnable action)
+    {
+        clientThread.invoke(() ->
+        {
+            if (activeConfig != null)
+            {
+                action.run();
+            }
+        });
     }
 
     public List<IgnoredPlayer> getIgnoredPlayers()
     {
-        return new ArrayList<>(ignoredPlayers.values());
+        List<IgnoredPlayer> players = new ArrayList<>(ignoredPlayers.values());
+        players.sort(provideConfig().sortOrder().comparator());
+        return players;
+    }
+
+    private void handleSortOrderChange(IgnoreListSortOrder sortOrder)
+    {
+        clientThread.invoke(() ->
+        {
+            if (activeConfig != null && provideConfig().sortOrder() != sortOrder)
+            {
+                configManager.setConfiguration(CONFIG_GROUP, SORT_ORDER_CONFIG_KEY, sortOrder.name());
+                updatePanelPlayers();
+            }
+        });
     }
 
     private boolean shouldDraw(net.runelite.api.Renderable renderable, boolean drawingUI)
@@ -332,6 +372,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
             syncAddIgnoreMenuItem();
         }
 
+        if (SORT_ORDER_CONFIG_KEY.equals(event.getKey()))
+        {
+            clientThread.invoke(this::updatePanelPlayers);
+        }
+
         if ("hidePlayers".equals(event.getKey()))
         {
             syncDrawListener();
@@ -361,6 +406,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
         {
             nativeIgnoreNamesBeforeAddAttempt.clear();
             nativeIgnoreNamesBeforeAddAttempt.addAll(getNativeIgnoreCurrentNames());
+            nativeIgnoreNamesSyncedDuringAddAttempt.clear();
+            nativeIgnoreNamesSyncedDuringAddAttempt.addAll(nativeIgnoreNamesBeforeAddAttempt);
             nativeAddObserved = false;
             pendingNativeAddFallbackName = null;
             nativeAddDialogBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.LAST_NAMEDIALOG));
@@ -599,6 +646,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private boolean importMissingNativeIgnores()
     {
+        return importMissingNativeIgnores(false);
+    }
+
+    private boolean importMissingNativeIgnores(boolean newNativeEntriesOnly)
+    {
         NameableContainer<Ignore> ignoreContainer = client.getIgnoreContainer();
         if (ignoreContainer == null)
         {
@@ -626,6 +678,23 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 continue;
             }
 
+            String previousName = member.getPrevName();
+            if (newNativeEntriesOnly)
+            {
+                String normalizedCurrentName = normalizeName(currentName);
+                String normalizedPreviousName = normalizeName(previousName);
+                if (nativeIgnoreNamesSyncedDuringAddAttempt.contains(normalizedCurrentName)
+                    || nativeIgnoreNamesSyncedDuringAddAttempt.contains(normalizedPreviousName))
+                {
+                    continue;
+                }
+                nativeIgnoreNamesSyncedDuringAddAttempt.add(normalizedCurrentName);
+                if (normalizedPreviousName != null)
+                {
+                    nativeIgnoreNamesSyncedDuringAddAttempt.add(normalizedPreviousName);
+                }
+            }
+
             IgnoredPlayer ignoredPlayer = findIgnoredPlayerByName(currentName);
             if (ignoredPlayer == null)
             {
@@ -635,7 +704,6 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 changed = true;
             }
 
-            String previousName = member.getPrevName();
             if (previousName != null && !previousName.isEmpty())
             {
                 int aliasesBefore = ignoredPlayer.getAliases().size();
@@ -646,6 +714,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
         if (!importedPlayers.isEmpty())
         {
+            long addedAt = nextAddedAt() + importedPlayers.size() - 1;
+            for (IgnoredPlayer player : importedPlayers.values())
+            {
+                player.setAddedAt(addedAt--);
+            }
             importedPlayers.putAll(ignoredPlayers);
             ignoredPlayers.clear();
             ignoredPlayers.putAll(importedPlayers);
@@ -671,6 +744,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
         rebuildIgnoredNameIndex();
         if (panel != null)
         {
+            panel.setSortOrder(provideConfig().sortOrder());
             panel.setPlayers(getIgnoredPlayers());
         }
 
@@ -763,6 +837,10 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
         mergeSerializedIgnoredPlayers(configManager.getConfiguration(CONFIG_GROUP, SHARED_STORAGE_KEY, IGNORED_PLAYERS_CONFIG_KEY));
         migrateIgnoredPlayers();
+        if (assignLegacyAddedDates())
+        {
+            persistIgnoredPlayers();
+        }
         rebuildIgnoredNameIndex();
     }
 
@@ -790,6 +868,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
             }
 
             if (SERIALIZED_ROW_VERSION.equalsIgnoreCase(parts[0])
+                || NOTES_SERIALIZED_ROW_VERSION.equalsIgnoreCase(parts[0])
                 || LEGACY_SERIALIZED_ROW_VERSION.equalsIgnoreCase(parts[0]))
             {
                 if (parts.length < 2)
@@ -808,9 +887,36 @@ public class ExtendedIgnoreListPlugin extends Plugin
                     }
                 }
 
-                if (SERIALIZED_ROW_VERSION.equalsIgnoreCase(parts[0]) && parts.length > 3)
+                if (!LEGACY_SERIALIZED_ROW_VERSION.equalsIgnoreCase(parts[0]) && parts.length > 3)
                 {
                     ignoredPlayer.setNote(parts[3]);
+                }
+
+                if (SERIALIZED_ROW_VERSION.equalsIgnoreCase(parts[0]))
+                {
+                    if (parts.length > 4)
+                    {
+                        try
+                        {
+                            long addedAt = Long.parseLong(parts[4]);
+                            if (addedAt > 0 && addedAt < Long.MAX_VALUE)
+                            {
+                                ignoredPlayer.setAddedAt(addedAt);
+                            }
+                            else
+                            {
+                                log.debug("Invalid date added for ignored player: {}", parts[1]);
+                            }
+                        }
+                        catch (NumberFormatException ex)
+                        {
+                            log.debug("Malformed date added for ignored player: {}", parts[1], ex);
+                        }
+                    }
+                    else
+                    {
+                        log.debug("Missing date added for ignored player: {}", parts[1]);
+                    }
                 }
 
                 loadedPlayers.add(ignoredPlayer);
@@ -870,6 +976,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
             }
             else
             {
+                if (player.getAddedAt() > 0 && (existing.getAddedAt() == 0
+                    || player.getAddedAt() < existing.getAddedAt()))
+                {
+                    existing.setAddedAt(player.getAddedAt());
+                }
                 existing.addAlias(player.getCurrentName());
                 existing.addAliases(player.getAliases());
                 if (!player.getNote().isEmpty() && !existing.getNote().equals(player.getNote()))
@@ -933,8 +1044,11 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private void persistIgnoredPlayers()
     {
+        assignLegacyAddedDates();
+        List<IgnoredPlayer> players = new ArrayList<>(ignoredPlayers.values());
+        players.sort(IgnoreListSortOrder.NEWEST_FIRST.comparator());
         StringBuilder serializedPlayers = new StringBuilder();
-        for (IgnoredPlayer player : ignoredPlayers.values())
+        for (IgnoredPlayer player : players)
         {
             if (serializedPlayers.length() > 0)
             {
@@ -952,7 +1066,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
                 serializedPlayers.append(String.join("|", aliases));
             }
 
-            serializedPlayers.append('\t').append(sanitizeNote(player.getNote()));
+            serializedPlayers.append('\t').append(sanitizeNote(player.getNote()))
+                .append('\t').append(player.getAddedAt());
         }
 
         updatingIgnoredPlayersConfig = true;
@@ -976,6 +1091,40 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private String getAccountStorageKey()
     {
         return configManager.getRSProfileKey();
+    }
+
+    private long nextAddedAt()
+    {
+        long addedAt = System.currentTimeMillis();
+        for (IgnoredPlayer player : ignoredPlayers.values())
+        {
+            addedAt = Math.max(addedAt, player.getAddedAt() + 1);
+        }
+        return addedAt;
+    }
+
+    private boolean assignLegacyAddedDates()
+    {
+        long addedAt = System.currentTimeMillis();
+        for (IgnoredPlayer player : ignoredPlayers.values())
+        {
+            if (player.getAddedAt() > 0)
+            {
+                addedAt = Math.min(addedAt, player.getAddedAt());
+            }
+        }
+
+        boolean changed = false;
+        // Legacy rows are stored newest first; their historical dates are unavailable.
+        for (IgnoredPlayer player : ignoredPlayers.values())
+        {
+            if (player.getAddedAt() == 0)
+            {
+                player.setAddedAt(--addedAt);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private void syncAddIgnoreMenuItem()
@@ -1105,7 +1254,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (pendingNativeIgnoreImportTicks > 0)
         {
             capturePendingNativeAddNameCandidate();
-            changed |= importMissingNativeIgnores();
+            changed |= importMissingNativeIgnores(true);
             if (nativeIgnoreAddDetected())
             {
                 nativeAddObserved = true;
@@ -1235,7 +1384,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
 
     private void addPendingFallbackNameToExtendedList()
     {
-        if (pendingNativeAddFallbackName == null)
+        if (pendingNativeAddFallbackName == null
+            || nativeIgnoreNamesSyncedDuringAddAttempt.contains(normalizeName(pendingNativeAddFallbackName)))
         {
             return;
         }

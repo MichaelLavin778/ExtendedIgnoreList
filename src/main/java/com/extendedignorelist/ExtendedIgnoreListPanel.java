@@ -17,6 +17,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -42,8 +43,12 @@ public class ExtendedIgnoreListPanel extends PluginPanel
     private final Consumer<String> removePlayerAction;
     private final BiConsumer<String, String> editNoteAction;
     private final JButton importButton;
+    private final JComboBox<IgnoreListSortOrder> sortSelector;
+    private boolean updatingSortOrder;
 
-    public ExtendedIgnoreListPanel(Runnable importAction, Consumer<String> removePlayerAction, BiConsumer<String, String> editNoteAction)
+    public ExtendedIgnoreListPanel(Runnable importAction, Consumer<String> removePlayerAction,
+        BiConsumer<String, String> editNoteAction, IgnoreListSortOrder sortOrder,
+        Consumer<IgnoreListSortOrder> sortAction)
     {
         super(false);
         this.removePlayerAction = removePlayerAction;
@@ -99,6 +104,23 @@ public class ExtendedIgnoreListPanel extends PluginPanel
         headerPanel.setAlignmentX(LEFT_ALIGNMENT);
         headerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerPanel.getPreferredSize().height));
         topPanel.add(headerPanel);
+        JPanel sortPanel = new JPanel(new BorderLayout(8, 0));
+        sortPanel.setOpaque(false);
+        sortPanel.setAlignmentX(LEFT_ALIGNMENT);
+        JLabel sortLabel = createHelpLabel("Sort:");
+        sortSelector = new JComboBox<>(IgnoreListSortOrder.values());
+        sortSelector.setSelectedItem(sortOrder);
+        sortSelector.setToolTipText("Sort by name or date added");
+        sortSelector.addActionListener(event ->
+        {
+            if (!updatingSortOrder)
+            {
+                sortAction.accept(sortSelector.getItemAt(sortSelector.getSelectedIndex()));
+            }
+        });
+        sortPanel.add(sortLabel, BorderLayout.WEST);
+        sortPanel.add(sortSelector, BorderLayout.CENTER);
+        sortPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, sortPanel.getPreferredSize().height));
         JPanel helpPanel = new JPanel();
         helpPanel.setLayout(new BoxLayout(helpPanel, BoxLayout.Y_AXIS));
         helpPanel.setOpaque(false);
@@ -108,6 +130,8 @@ public class ExtendedIgnoreListPanel extends PluginPanel
         helpPanel.add(deleteHelpLabel);
         helpPanel.add(noteHelpLabel);
         topPanel.add(helpPanel);
+        topPanel.add(Box.createRigidArea(new Dimension(0, 8)));
+        topPanel.add(sortPanel);
         topPanel.add(Box.createRigidArea(new Dimension(0, 8)));
 
         content.add(topPanel, BorderLayout.NORTH);
@@ -138,6 +162,33 @@ public class ExtendedIgnoreListPanel extends PluginPanel
         }
 
         SwingUtilities.invokeLater(() -> renderPlayers(players));
+    }
+
+    public void setSortOrder(IgnoreListSortOrder sortOrder)
+    {
+        Runnable update = () ->
+        {
+            if (sortSelector.getSelectedItem() != sortOrder)
+            {
+                updatingSortOrder = true;
+                try
+                {
+                    sortSelector.setSelectedItem(sortOrder);
+                }
+                finally
+                {
+                    updatingSortOrder = false;
+                }
+            }
+        };
+
+        if (SwingUtilities.isEventDispatchThread())
+        {
+            update.run();
+            return;
+        }
+
+        SwingUtilities.invokeLater(update);
     }
 
     public void setImportButtonState(boolean enabled, String disabledReason)
