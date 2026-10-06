@@ -1345,6 +1345,91 @@ public class ExtendedIgnoreListPluginBehaviorTest
     }
 
     @Test
+    public void theatreLobbyHudHighlightsAndRoutesJoinAlertWithNote()
+    {
+        sharedValues.put("ignoredPlayers", "v4\tAlice\tAlicia\tleft the team\t100");
+        configValues.put("notifyWhenInGroup", GroupNotificationMode.NOTIFICATION_AND_CHAT.name());
+        when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
+        when(client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSTATUS)).thenReturn(1);
+        Widget names = mock(Widget.class);
+        when(names.getId()).thenReturn(InterfaceID.TobHud.NAMES);
+        when(names.getType()).thenReturn(WidgetType.TEXT);
+        AtomicReference<String> text = new AtomicReference<>("Me<br>-<br>-<br>-<br>-");
+        when(names.getText()).thenAnswer(invocation -> text.get());
+        doAnswer(invocation ->
+        {
+            text.set(invocation.getArgument(0));
+            return null;
+        }).when(names).setText(anyString());
+        when(client.getWidget(InterfaceID.TobHud.NAMES)).thenReturn(names);
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            text.set("Me<br>Alicia<br>-<br>-<br>-");
+            plugin.onGameTick(new GameTick());
+            plugin.onGameTick(new GameTick());
+            assertEquals("Me<br><col=ff0000>Alicia</col><br>-<br>-<br>-", text.get());
+            verify(notifier).notify("Alicia is on your extended ignore list.");
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Alicia is on your extended ignore list for left the team.", "");
+
+            plugin.removeIgnoredPlayer("Alice");
+            plugin.onGameTick(new GameTick());
+            assertEquals("Me<br>Alicia<br>-<br>-<br>-", text.get());
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
+    @Test
+    public void amascutLobbyHighlightsAndNotifiesOnJoiningAnExistingTeam()
+    {
+        sharedValues.put("ignoredPlayers", "v4\tAlice\tAlicia\tleft the team\t100");
+        configValues.put("notifyWhenInGroup", GroupNotificationMode.NOTIFICATION_AND_CHAT.name());
+        when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
+        Widget names = mock(Widget.class);
+        when(names.getId()).thenReturn(InterfaceID.ToaLobby.NAMES);
+        when(names.getType()).thenReturn(WidgetType.TEXT);
+        AtomicReference<String> text = new AtomicReference<>("Me<br>Alicia<br>-<br>-<br>-<br>-<br>-<br>-");
+        when(names.getText()).thenAnswer(invocation -> text.get());
+        doAnswer(invocation ->
+        {
+            text.set(invocation.getArgument(0));
+            return null;
+        }).when(names).setText(anyString());
+        when(client.getWidget(InterfaceID.ToaLobby.NAMES)).thenReturn(names);
+        plugin.startUp();
+        try
+        {
+            plugin.onGameTick(new GameTick());
+            verify(notifier, never()).notify(anyString());
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS)).thenReturn(1);
+            plugin.onGameTick(new GameTick());
+            plugin.onGameTick(new GameTick());
+            assertEquals("Me<br><col=ff0000>Alicia</col><br>-<br>-<br>-<br>-<br>-<br>-", text.get());
+            verify(notifier).notify("Alicia is on your extended ignore list.");
+            verify(client).addChatMessage(ChatMessageType.CONSOLE, "",
+                "Alicia is on your extended ignore list for left the team.", "");
+
+            setConfigField("highlightRaidsAndGroups", false);
+            plugin.onGameTick(new GameTick());
+            assertEquals("Me<br>Alicia<br>-<br>-<br>-<br>-<br>-<br>-", text.get());
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS)).thenReturn(0);
+            plugin.onGameTick(new GameTick());
+            when(client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS)).thenReturn(1);
+            plugin.onGameTick(new GameTick());
+            verify(notifier, times(2)).notify("Alicia is on your extended ignore list.");
+        }
+        finally
+        {
+            plugin.shutDown();
+        }
+    }
+
+    @Test
     public void singleIgnoredPlayerNoteAppearsOnlyInChatIncludingWhenCensored() throws Exception
     {
         sharedValues.put("ignoredPlayers", "v3\tAlice\tAlicia\t  rude <br> player  ");

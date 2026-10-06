@@ -45,6 +45,7 @@ public class RaidBoardHighlighterTest
             InterfaceID.TobPartylist.LIST,
             InterfaceID.TobPartydetails.CURRENT,
             InterfaceID.TobPartydetails.APPLICANTS,
+            InterfaceID.TobHud.NAMES,
             InterfaceID.ToaPartylist.LIST,
             InterfaceID.ToaPartydetails.MEMBERS_LIST,
             InterfaceID.ToaPartydetails.APPLICANTS_LIST,
@@ -79,6 +80,75 @@ public class RaidBoardHighlighterTest
         {
             assertEquals("<col=ff0000>Alice</col>", client.getWidget(component).getDynamicChildren()[1].getText());
         }
+    }
+
+    @Test
+    public void theatreHudHighlightsOnlyIgnoredLinesAndRestoresOriginalText()
+    {
+        Widget names = textWidget("Me<br><col=ffff00>Alice</col><br>Alice Prime<br>-<br>-");
+        when(names.getId()).thenReturn(InterfaceID.TobHud.NAMES);
+        when(client.getWidget(InterfaceID.TobHud.NAMES)).thenReturn(names);
+        highlighter.refresh(true);
+        assertEquals("Me<br><col=ff0000>Alice</col><br>Alice Prime<br>-<br>-", names.getText());
+        highlighter.refresh(true);
+        ignoredNames.clear();
+        highlighter.refresh(true);
+        assertEquals("Me<br><col=ffff00>Alice</col><br>Alice Prime<br>-<br>-", names.getText());
+        ignoredNames.add("alice");
+        highlighter.refresh(true);
+        highlighter.refresh(false);
+        assertEquals("Me<br><col=ffff00>Alice</col><br>Alice Prime<br>-<br>-", names.getText());
+    }
+
+    @Test
+    public void amascutLobbyHighlightsOnlyIgnoredNamesAndRestoresOnDisableOrRemoval()
+    {
+        ignoredNames.add("old alice");
+        String original = "Me<br><img=1><col=ffff00>OLD\u00a0Alice</col><br>Alice Prime<br>-<br>-<br>-<br>-<br>-";
+        Widget names = textWidget(original);
+        when(names.getId()).thenReturn(InterfaceID.ToaLobby.NAMES);
+        when(client.getWidget(InterfaceID.ToaLobby.NAMES)).thenReturn(names);
+        highlighter.refresh(true);
+        assertEquals("Me<br><col=ff0000><img=1>OLD\u00a0Alice</col><br>Alice Prime<br>-<br>-<br>-<br>-<br>-",
+            names.getText());
+        highlighter.refresh(false);
+        assertEquals(original, names.getText());
+        highlighter.refresh(true);
+        ignoredNames.clear();
+        highlighter.refresh(true);
+        assertEquals(original, names.getText());
+    }
+
+    @Test
+    public void chambersHighlightsTruncatedNamesUsingFullNameAndRestoresOnRowReuse()
+    {
+        ignoredNames.add("long alice");
+        Widget list = mock(Widget.class);
+        Widget visible = textWidget("<img=1>Long Ali...");
+        Widget full = textWidget("Long Alice");
+        when(full.isHidden()).thenReturn(true);
+        Widget otherColumn = textWidget("Alice");
+        Widget[] children = new Widget[7];
+        children[1] = visible;
+        children[2] = otherColumn;
+        children[4] = full;
+        when(list.getDynamicChildren()).thenReturn(children);
+        when(client.getWidget(InterfaceID.RaidsSidepanel.LIST)).thenReturn(list);
+
+        highlighter.refresh(true);
+        assertEquals("<col=ff0000><img=1>Long Ali...</col>", visible.getText());
+        assertEquals("Long Alice", full.getText());
+        highlighter.refresh(false);
+        assertEquals("<img=1>Long Ali...", visible.getText());
+        highlighter.refresh(true);
+        when(full.getText()).thenReturn("Long Alison");
+        highlighter.refresh(true);
+        assertEquals("<img=1>Long Ali...", visible.getText());
+        when(full.getText()).thenReturn("Long Alice");
+        highlighter.refresh(true);
+        ignoredNames.clear();
+        highlighter.refresh(true);
+        assertEquals("<img=1>Long Ali...", visible.getText());
     }
 
     @Test

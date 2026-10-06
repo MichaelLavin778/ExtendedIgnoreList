@@ -10,6 +10,8 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.FriendsChatManager;
+import net.runelite.api.FriendsChatMember;
 import net.runelite.api.Player;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
@@ -40,10 +42,8 @@ final class RaidGroupMonitor
         VarbitID.TOA_CLIENT_P4, VarbitID.TOA_CLIENT_P5,
         VarbitID.TOA_CLIENT_P6, VarbitID.TOA_CLIENT_P7
     };
-    // raids_sidepanel_addline stores the untruncated name at child row * 7 + 4.
-    private static final int COX_ROW_SIZE = 7;
-    private static final int COX_FULL_NAME_OFFSET = 4;
     private static final int BA_LOBBY_REGION_ID = 10322;
+    private static final int COX_ENTRANCE_REGION_ID = 4919;
     private static final int[] BA_TEAM_NAMES = {
         InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME,
         InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
@@ -81,10 +81,8 @@ final class RaidGroupMonitor
             return;
         }
 
-        check(Raid.TOB, readParty(VarbitID.TOB_CLIENT_PARTYSTATUS, VarbitID.TOB_CLIENT_PARTYSLOT,
-            TOB_NAMES, TOB_MEMBERS), mode);
-        check(Raid.TOA, readParty(VarbitID.TOA_CLIENT_PARTYSTATUS, VarbitID.TOA_CLIENT_PARTYSLOT,
-            TOA_NAMES, TOA_MEMBERS), mode);
+        check(Raid.TOB, readTheatreParty(), mode);
+        check(Raid.TOA, readAmascutParty(), mode);
         check(Raid.COX, readChambersParty(), mode);
         check(Raid.BA, readBarbarianAssaultTeam(), mode);
     }
@@ -141,15 +139,57 @@ final class RaidGroupMonitor
         return party;
     }
 
+    private List<String> readTheatreParty()
+    {
+        int status = client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSTATUS);
+        if ((status != 1 && status != 2)
+            || (status == 2 && client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSLOT) == 0))
+        {
+            return new ArrayList<>();
+        }
+        List<String> hudNames = RaidPartyRoster.readNames(client.getWidget(InterfaceID.TobHud.NAMES));
+        if (hudNames != null)
+        {
+            return hudNames;
+        }
+        // Lobby membership is shown by the names HUD; combat slots can still be unset.
+        if (status == 1 && client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSLOT) == 0)
+        {
+            return null;
+        }
+        return readParty(VarbitID.TOB_CLIENT_PARTYSTATUS, VarbitID.TOB_CLIENT_PARTYSLOT,
+            TOB_NAMES, TOB_MEMBERS);
+    }
+
+    private List<String> readAmascutParty()
+    {
+        int status = client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS);
+        if (status != 1 && status != 2)
+        {
+            return new ArrayList<>();
+        }
+        List<String> lobbyNames = RaidPartyRoster.readNames(client.getWidget(InterfaceID.ToaLobby.NAMES));
+        if (lobbyNames != null)
+        {
+            return lobbyNames;
+        }
+        if (status == 1 && client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSLOT) == 0)
+        {
+            return null;
+        }
+        return readParty(VarbitID.TOA_CLIENT_PARTYSTATUS, VarbitID.TOA_CLIENT_PARTYSLOT,
+            TOA_NAMES, TOA_MEMBERS);
+    }
+
     private List<String> readChambersParty()
     {
         if (client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON) == 0)
         {
-            return new ArrayList<>();
+            return readChambersLobbyParty();
         }
 
         Widget list = client.getWidget(InterfaceID.RaidsSidepanel.LIST);
-        if (list == null || list.getDynamicChildren() == null)
+        if (list == null || list.isHidden() || list.getDynamicChildren() == null)
         {
             // An unavailable sidepanel is not evidence that a player left the party.
             return null;
@@ -157,11 +197,45 @@ final class RaidGroupMonitor
 
         List<String> party = new ArrayList<>();
         Widget[] children = list.getDynamicChildren();
-        for (int i = COX_FULL_NAME_OFFSET; i < children.length; i += COX_ROW_SIZE)
+        for (int i = RaidPartyRoster.CHAMBERS_FULL_NAME_OFFSET; i < children.length;
+            i += RaidPartyRoster.CHAMBERS_ROW_SIZE)
         {
             if (children[i] != null)
             {
                 party.add(children[i].getText());
+            }
+        }
+        return party;
+    }
+
+    private List<String> readChambersLobbyParty()
+    {
+        Player localPlayer = client.getLocalPlayer();
+        WorldPoint location = localPlayer == null ? null : localPlayer.getWorldLocation();
+        if (location == null)
+        {
+            return null;
+        }
+        if (location.getRegionID() != COX_ENTRANCE_REGION_ID)
+        {
+            return new ArrayList<>();
+        }
+        FriendsChatManager friendsChat = client.getFriendsChatManager();
+        if (friendsChat == null)
+        {
+            return new ArrayList<>();
+        }
+        FriendsChatMember[] members = friendsChat.getMembers();
+        if (members == null)
+        {
+            return null;
+        }
+        List<String> party = new ArrayList<>();
+        for (FriendsChatMember member : members)
+        {
+            if (member != null)
+            {
+                party.add(member.getName());
             }
         }
         return party;

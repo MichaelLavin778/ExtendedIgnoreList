@@ -22,6 +22,7 @@ final class RaidBoardHighlighter
         InterfaceID.TobPartylist.LIST,
         InterfaceID.TobPartydetails.CURRENT,
         InterfaceID.TobPartydetails.APPLICANTS,
+        InterfaceID.TobHud.NAMES,
         InterfaceID.ToaPartylist.LIST,
         InterfaceID.ToaPartydetails.MEMBERS_LIST,
         InterfaceID.ToaPartydetails.APPLICANTS_LIST,
@@ -66,7 +67,12 @@ final class RaidBoardHighlighter
         Set<Widget> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (int componentId : PLAYER_LIST_COMPONENTS)
         {
-            highlight(client.getWidget(componentId), visited);
+            Widget widget = client.getWidget(componentId);
+            if (componentId == InterfaceID.RaidsSidepanel.LIST)
+            {
+                highlightChambersNames(widget, visited);
+            }
+            highlight(widget, visited);
         }
 
         Iterator<Map.Entry<Widget, Highlight>> iterator = highlights.entrySet().iterator();
@@ -117,6 +123,33 @@ final class RaidBoardHighlighter
 
     private void highlightName(Widget widget)
     {
+        highlightName(widget, null);
+    }
+
+    private void highlightChambersNames(Widget list, Set<Widget> visited)
+    {
+        if (list == null || list.isHidden() || list.getDynamicChildren() == null)
+        {
+            return;
+        }
+        Widget[] children = list.getDynamicChildren();
+        for (int row = 0; row + RaidPartyRoster.CHAMBERS_FULL_NAME_OFFSET < children.length;
+            row += RaidPartyRoster.CHAMBERS_ROW_SIZE)
+        {
+            Widget visibleName = children[row + RaidPartyRoster.CHAMBERS_VISIBLE_NAME_OFFSET];
+            Widget fullName = children[row + RaidPartyRoster.CHAMBERS_FULL_NAME_OFFSET];
+            if (visibleName != null && fullName != null && fullName.getText() != null
+                && !visibleName.isHidden() && visibleName.getType() == WidgetType.TEXT
+                && visited.add(visibleName))
+            {
+                // The visible label may be truncated; the hidden sort field retains the full name.
+                highlightName(visibleName, Text.removeTags(fullName.getText()));
+            }
+        }
+    }
+
+    private void highlightName(Widget widget, String fullName)
+    {
         String displayedText = widget.getText();
         Highlight previous = highlights.get(widget);
         String originalText = displayedText;
@@ -134,8 +167,7 @@ final class RaidBoardHighlighter
             }
         }
 
-        if (originalText == null || originalText.isEmpty()
-            || !isIgnoredName.test(Text.removeTags(originalText)))
+        if (originalText == null || originalText.isEmpty())
         {
             if (previous != null)
             {
@@ -145,7 +177,45 @@ final class RaidBoardHighlighter
             return;
         }
 
-        String coloredText = RED_PREFIX + COLOR_TAGS.matcher(originalText).replaceAll("") + "</col>";
+        String coloredText = originalText;
+        if (widget.getId() == InterfaceID.TobHud.NAMES
+            || widget.getId() == InterfaceID.ToaLobby.NAMES)
+        {
+            String[] lines = originalText.split("(?i)(?<=<br>)|(?<=\\n)", -1);
+            StringBuilder coloredLines = new StringBuilder();
+            for (String line : lines)
+            {
+                String separator = "";
+                String name = line;
+                if (line.toLowerCase(java.util.Locale.ROOT).endsWith("<br>"))
+                {
+                    separator = line.substring(line.length() - 4);
+                    name = line.substring(0, line.length() - 4);
+                }
+                else if (line.endsWith("\n"))
+                {
+                    separator = "\n";
+                    name = line.substring(0, line.length() - 1);
+                }
+                coloredLines.append(isIgnoredName.test(Text.removeTags(name).trim())
+                    ? RED_PREFIX + COLOR_TAGS.matcher(name).replaceAll("") + "</col>" : name);
+                coloredLines.append(separator);
+            }
+            coloredText = coloredLines.toString();
+        }
+        else if (isIgnoredName.test(fullName == null ? Text.removeTags(originalText) : fullName))
+        {
+            coloredText = RED_PREFIX + COLOR_TAGS.matcher(originalText).replaceAll("") + "</col>";
+        }
+        if (coloredText.equals(originalText))
+        {
+            if (previous != null)
+            {
+                restore(widget, previous);
+                highlights.remove(widget);
+            }
+            return;
+        }
         if (!coloredText.equals(displayedText))
         {
             widget.setText(coloredText);
