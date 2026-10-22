@@ -20,6 +20,8 @@ Configure these in the plugin settings:
 - Highlight ignored names on supported raid and Barbarian Assault lists (on by default).
 - Get a chat message or RuneLite notification when an ignored player is in your raid group or Barbarian Assault team. Alerts are chat-only by default; you can disable them or censor names.
 
+Supported raids are Chambers of Xeric, Theatre of Blood, Tombs of Amascut, and The Fractured Archive. Fractured Archive support includes party boards, member/applicant lists, the lobby roster, and in-raid HUD initials matched against full player names. Group alerts apply to your own party, not parties you merely browse or externally spectate.
+
 ## Syncing
 
 The extended list, aliases, and notes are shared across RuneScape accounts and RuneLite profiles. Plugin settings remain profile-specific. To sync between computers, sign in to the same RuneLite account and allow RuneLite's normal cloud sync to complete. Avoid editing the list on multiple computers at the same time.

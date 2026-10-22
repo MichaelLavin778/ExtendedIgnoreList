@@ -231,6 +231,123 @@ public class RaidGroupMonitorTest
         assertTrue(messages.isEmpty());
     }
 
+    @Test
+    public void archiveLobbyAlertsOnceAndPreservesStateAcrossMissingRosterAndRaidEntry()
+    {
+        Widget names = archiveLobby("Me<br>-");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+        when(names.getText()).thenReturn("Me<br><col=ff0000>Alice</col>");
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+        when(client.getWidget(InterfaceID.TfaLobby.NAMES)).thenReturn(null);
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(2);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Alice");
+        monitor.refresh(GroupNotificationMode.NOTIFICATION_AND_CHAT);
+
+        assertEquals(List.of("Alice is on your extended ignore list."), messages);
+        assertEquals(List.of(GroupNotificationMode.NOTIFICATION_AND_CHAT), modes);
+        assertEquals("Alice", singleIgnoredNames.get(0));
+    }
+
+    @Test
+    public void archivePartyTracksFirstAndLastSlotsAndExcludesOwnSlotAndStaleNames()
+    {
+        ignoredNames.add("me");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT)).thenReturn(8);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P0)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Alice");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Me");
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME1)).thenReturn("Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(1, messages.size());
+
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P0)).thenReturn(0);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT)).thenReturn(1);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(2, messages.size());
+
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(30);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(2, messages.size());
+    }
+
+    @Test
+    public void archiveLeavingAndRejoiningOrMemberRejoiningAlertsAgain()
+    {
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        Widget names = archiveLobby("Me<br>Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(names.getText()).thenReturn("Me<br>-");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(names.getText()).thenReturn("Me<br>Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(0);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+
+        assertEquals(3, messages.size());
+    }
+
+    @Test
+    public void archiveDoesNotAlertForNoPartyExternalSpectatingHiddenRosterOrBrowsedBoards()
+    {
+        Widget names = archiveLobby("Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_SPECTATE_MODE)).thenReturn(2);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Alice");
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_SPECTATE_MODE)).thenReturn(0);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT)).thenReturn(0);
+        when(names.isHidden()).thenReturn(true);
+        Widget browsed = text("Alice");
+        when(client.getWidget(InterfaceID.TfaPartydetails.MEMBERS_LIST)).thenReturn(browsed);
+        when(client.getWidget(InterfaceID.TfaPartydetails.APPLICANTS_LIST)).thenReturn(browsed);
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+
+        assertTrue(messages.isEmpty());
+    }
+
+    @Test
+    public void archiveAlertsWhileSpectatingOwnTeamAndRespectsAliasesCensoringAndDisabledMode()
+    {
+        ignoredNames.add("old alice");
+        ignoredNames.add("me");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_SPECTATE_MODE)).thenReturn(1);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P0)).thenReturn(30);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Me");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("OLD\u00a0Alice");
+        censorName = true;
+        monitor.refresh(GroupNotificationMode.NONE);
+        assertTrue(messages.isEmpty());
+        monitor.refresh(GroupNotificationMode.CHAT_ONLY);
+        assertEquals(List.of("Someone is on your extended ignore list."), messages);
+        assertEquals("old alice", Text.standardize(singleIgnoredNames.get(0)));
+        assertEquals(List.of(GroupNotificationMode.CHAT_ONLY), modes);
+    }
+
+    private Widget archiveLobby(String names)
+    {
+        Widget widget = text(names);
+        when(widget.getType()).thenReturn(WidgetType.TEXT);
+        when(client.getWidget(InterfaceID.TfaLobby.NAMES)).thenReturn(widget);
+        return widget;
+    }
+
     private Widget toaLobby(String names)
     {
         Widget widget = text(names);

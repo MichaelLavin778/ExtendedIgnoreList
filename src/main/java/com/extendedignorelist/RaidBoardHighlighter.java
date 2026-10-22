@@ -15,6 +15,9 @@ import net.runelite.client.util.Text;
 
 final class RaidBoardHighlighter
 {
+    // These Archive HUD scripts do not yet have RuneLite ScriptID constants.
+    private static final int ARCHIVE_HUD_INIT_SCRIPT = 10031;
+    private static final int ARCHIVE_HUD_UPDATE_SCRIPT = 10033;
     private static final int[] PLAYER_LIST_COMPONENTS = {
         InterfaceID.RaidsLobbyPartylist.LIST,
         InterfaceID.RaidsLobbyPartydetails.LIST,
@@ -27,6 +30,10 @@ final class RaidBoardHighlighter
         InterfaceID.ToaPartydetails.MEMBERS_LIST,
         InterfaceID.ToaPartydetails.APPLICANTS_LIST,
         InterfaceID.ToaLobby.NAMES,
+        InterfaceID.TfaPartylist.LIST,
+        InterfaceID.TfaPartydetails.MEMBERS_LIST,
+        InterfaceID.TfaPartydetails.APPLICANTS_LIST,
+        InterfaceID.TfaLobby.NAMES,
         InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME,
         InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
         InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_2_NAME,
@@ -43,6 +50,12 @@ final class RaidBoardHighlighter
         InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN4,
         InterfaceID.BarbassaultScrollPl2.BARBASSAULT_SCROLL_PL2_TN5
     };
+    private static final int[] ARCHIVE_HUD_CONTAINERS = {
+        InterfaceID.TfaHud._0_CONTAINER, InterfaceID.TfaHud._1_CONTAINER,
+        InterfaceID.TfaHud._2_CONTAINER, InterfaceID.TfaHud._3_CONTAINER,
+        InterfaceID.TfaHud._4_CONTAINER, InterfaceID.TfaHud._5_CONTAINER,
+        InterfaceID.TfaHud._6_CONTAINER, InterfaceID.TfaHud._7_CONTAINER
+    };
     private static final Pattern COLOR_TAGS = Pattern.compile("</?col(?:=[^>]*)?>", Pattern.CASE_INSENSITIVE);
     private static final String RED_PREFIX = "<col=ff0000>";
 
@@ -54,6 +67,14 @@ final class RaidBoardHighlighter
     {
         this.client = client;
         this.isIgnoredName = isIgnoredName;
+    }
+
+    void onScriptPostFired(int scriptId, boolean enabled)
+    {
+        if (scriptId == ARCHIVE_HUD_INIT_SCRIPT || scriptId == ARCHIVE_HUD_UPDATE_SCRIPT)
+        {
+            refresh(enabled);
+        }
     }
 
     void refresh(boolean enabled)
@@ -74,6 +95,7 @@ final class RaidBoardHighlighter
             }
             highlight(widget, visited);
         }
+        highlightArchiveNames(visited);
 
         Iterator<Map.Entry<Widget, Highlight>> iterator = highlights.entrySet().iterator();
         while (iterator.hasNext())
@@ -148,6 +170,33 @@ final class RaidBoardHighlighter
         }
     }
 
+    private void highlightArchiveNames(Set<Widget> visited)
+    {
+        Widget names = client.getWidget(InterfaceID.TfaHud.CONTENT_NAMES);
+        if (names == null || names.isHidden())
+        {
+            return;
+        }
+        for (int i = 0; i < ARCHIVE_HUD_CONTAINERS.length; i++)
+        {
+            Widget container = client.getWidget(ARCHIVE_HUD_CONTAINERS[i]);
+            if (container == null || container.isHidden()
+                || client.getVarbitValue(RaidPartyRoster.ARCHIVE_MEMBERS[i]) == 0)
+            {
+                continue;
+            }
+            Widget label = container.getChild(0);
+            String fullName = client.getVarcStrValue(RaidPartyRoster.ARCHIVE_NAMES[i]);
+            if (label != null && !label.isHidden() && label.getType() == WidgetType.TEXT
+                && fullName != null && !fullName.isEmpty() && !"null".equalsIgnoreCase(fullName)
+                && visited.add(label))
+            {
+                // Archive HUD labels are initials; match against the full name in the corresponding slot.
+                highlightName(label, Text.removeTags(fullName));
+            }
+        }
+    }
+
     private void highlightName(Widget widget, String fullName)
     {
         String displayedText = widget.getText();
@@ -179,7 +228,8 @@ final class RaidBoardHighlighter
 
         String coloredText = originalText;
         if (widget.getId() == InterfaceID.TobHud.NAMES
-            || widget.getId() == InterfaceID.ToaLobby.NAMES)
+            || widget.getId() == InterfaceID.ToaLobby.NAMES
+            || widget.getId() == InterfaceID.TfaLobby.NAMES)
         {
             String[] lines = originalText.split("(?i)(?<=<br>)|(?<=\\n)", -1);
             StringBuilder coloredLines = new StringBuilder();

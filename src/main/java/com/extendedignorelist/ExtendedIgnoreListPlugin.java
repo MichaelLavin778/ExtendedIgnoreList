@@ -31,6 +31,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.ScriptCallbackEvent;
+import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.api.Renderable;
 import net.runelite.client.callback.RenderCallback;
@@ -638,6 +639,16 @@ public class ExtendedIgnoreListPlugin extends Plugin
         if (raidBoardHighlighter != null)
         {
             raidBoardHighlighter.refresh(provideConfig().highlightRaidsAndGroups());
+        }
+    }
+
+    @Subscribe
+    public void onScriptPostFired(ScriptPostFired event)
+    {
+        if (raidBoardHighlighter != null)
+        {
+            raidBoardHighlighter.onScriptPostFired(event.getScriptId(),
+                provideConfig().highlightRaidsAndGroups());
         }
     }
 

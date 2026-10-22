@@ -14,6 +14,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarClientID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetType;
 import net.runelite.client.util.Text;
@@ -50,6 +52,10 @@ public class RaidBoardHighlighterTest
             InterfaceID.ToaPartydetails.MEMBERS_LIST,
             InterfaceID.ToaPartydetails.APPLICANTS_LIST,
             InterfaceID.ToaLobby.NAMES,
+            InterfaceID.TfaPartylist.LIST,
+            InterfaceID.TfaPartydetails.MEMBERS_LIST,
+            InterfaceID.TfaPartydetails.APPLICANTS_LIST,
+            InterfaceID.TfaLobby.NAMES,
             InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_LEADER_NAME,
             InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_1_NAME,
             InterfaceID.BarbassaultOverRecruitPlayerNames.BARBASSAULT_PLAYER_2_NAME,
@@ -117,6 +123,116 @@ public class RaidBoardHighlighterTest
         ignoredNames.clear();
         highlighter.refresh(true);
         assertEquals(original, names.getText());
+    }
+
+    @Test
+    public void archiveLobbyHighlightsWholeNamesAndRestoresOriginalFormatting()
+    {
+        ignoredNames.add("old alice");
+        String original = "Me<br><img=1><col=ffff00>OLD\u00a0Alice</col><br>Alice Prime<br>-";
+        Widget names = textWidget(original);
+        when(names.getId()).thenReturn(InterfaceID.TfaLobby.NAMES);
+        when(client.getWidget(InterfaceID.TfaLobby.NAMES)).thenReturn(names);
+
+        highlighter.refresh(true);
+        assertEquals("Me<br><col=ff0000><img=1>OLD\u00a0Alice</col><br>Alice Prime<br>-", names.getText());
+        highlighter.refresh(true);
+        ignoredNames.clear();
+        highlighter.refresh(true);
+        assertEquals(original, names.getText());
+        ignoredNames.add("old alice");
+        highlighter.refresh(true);
+        highlighter.refresh(false);
+        assertEquals(original, names.getText());
+    }
+
+    @Test
+    public void archiveHudMatchesFullNamesInsteadOfInitialsAndHandlesSlotReuse()
+    {
+        ignoredNames.add("a");
+        when(client.getWidget(InterfaceID.TfaHud.CONTENT_NAMES)).thenReturn(mock(Widget.class));
+        Widget label = archiveHudLabel(InterfaceID.TfaHud._0_CONTAINER, "A");
+        Widget other = archiveHudLabel(InterfaceID.TfaHud._7_CONTAINER, "A");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P0)).thenReturn(31);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(30);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Alice");
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Alice Prime");
+
+        highlighter.refresh(true);
+        assertEquals("<col=ff0000>A</col>", label.getText());
+        assertEquals("A", other.getText());
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Andrew");
+        highlighter.refresh(true);
+        assertEquals("A", label.getText());
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Alice");
+        highlighter.refresh(true);
+        assertEquals("<col=ff0000>A</col>", other.getText());
+        highlighter.refresh(false);
+        assertEquals("A", other.getText());
+    }
+
+    @Test
+    public void archiveHudReappliesHighlightAfterEveryScriptRedrawWithoutWaitingForGameTick()
+    {
+        Widget names = mock(Widget.class);
+        when(client.getWidget(InterfaceID.TfaHud.CONTENT_NAMES)).thenReturn(names);
+        Widget label = archiveHudLabel(InterfaceID.TfaHud._0_CONTAINER, "A");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P0)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Alice");
+
+        highlighter.onScriptPostFired(10031, true);
+        assertEquals("<col=ff0000>A</col>", label.getText());
+        for (int i = 0; i < 5; i++)
+        {
+            label.setText("A");
+            highlighter.onScriptPostFired(10033, true);
+            assertEquals("<col=ff0000>A</col>", label.getText());
+        }
+
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Andrew");
+        highlighter.onScriptPostFired(10033, true);
+        assertEquals("A", label.getText());
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME0)).thenReturn("Alice");
+        highlighter.onScriptPostFired(10033, true);
+        highlighter.onScriptPostFired(10033, false);
+        assertEquals("A", label.getText());
+    }
+
+    @Test
+    public void unrelatedScriptsDoNotRefreshHighlights()
+    {
+        Widget name = textWidget("Alice");
+        show(name);
+
+        highlighter.onScriptPostFired(-1, true);
+
+        verify(name, never()).setText(anyString());
+    }
+
+    @Test
+    public void archiveHudRestoresWhenHiddenEmptyOrNameUnavailable()
+    {
+        Widget names = mock(Widget.class);
+        when(client.getWidget(InterfaceID.TfaHud.CONTENT_NAMES)).thenReturn(names);
+        Widget label = archiveHudLabel(InterfaceID.TfaHud._7_CONTAINER, "A");
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(31);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn("Alice");
+        highlighter.refresh(true);
+        assertEquals("<col=ff0000>A</col>", label.getText());
+
+        when(names.isHidden()).thenReturn(true);
+        highlighter.refresh(true);
+        assertEquals("A", label.getText());
+        when(names.isHidden()).thenReturn(false);
+        highlighter.refresh(true);
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(0);
+        highlighter.refresh(true);
+        assertEquals("A", label.getText());
+        when(client.getVarbitValue(VarbitID.TFA_CLIENT_P7)).thenReturn(31);
+        highlighter.refresh(true);
+        when(client.getVarcStrValue(VarClientID.TFA_CLIENT_NAME7)).thenReturn(null);
+        highlighter.refresh(true);
+        assertEquals("A", label.getText());
     }
 
     @Test
@@ -325,6 +441,15 @@ public class RaidBoardHighlighterTest
         verify(partialName, never()).setText(anyString());
         highlighter.refresh(false);
         assertEquals("<col=ffa81f>Alice</col>", name.getText());
+    }
+
+    private Widget archiveHudLabel(int component, String text)
+    {
+        Widget container = mock(Widget.class);
+        Widget label = textWidget(text);
+        when(container.getChild(0)).thenReturn(label);
+        when(client.getWidget(component)).thenReturn(container);
+        return label;
     }
 
     private void show(Widget... names)

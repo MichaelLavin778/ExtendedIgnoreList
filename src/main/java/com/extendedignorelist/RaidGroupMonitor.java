@@ -84,6 +84,7 @@ final class RaidGroupMonitor
         check(Raid.TOB, readTheatreParty(), mode);
         check(Raid.TOA, readAmascutParty(), mode);
         check(Raid.COX, readChambersParty(), mode);
+        check(Raid.TFA, readArchiveParty(), mode);
         check(Raid.BA, readBarbarianAssaultTeam(), mode);
     }
 
@@ -179,6 +180,26 @@ final class RaidGroupMonitor
         }
         return readParty(VarbitID.TOA_CLIENT_PARTYSTATUS, VarbitID.TOA_CLIENT_PARTYSLOT,
             TOA_NAMES, TOA_MEMBERS);
+    }
+
+    private List<String> readArchiveParty()
+    {
+        if (client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSTATUS) == 0
+            || client.getVarbitValue(VarbitID.TFA_CLIENT_SPECTATE_MODE) == 2)
+        {
+            return new ArrayList<>();
+        }
+        List<String> lobbyNames = RaidPartyRoster.readNames(client.getWidget(InterfaceID.TfaLobby.NAMES));
+        if (lobbyNames != null)
+        {
+            return lobbyNames;
+        }
+        if (client.getVarbitValue(VarbitID.TFA_CLIENT_PARTYSLOT) == 0)
+        {
+            return null;
+        }
+        return readParty(VarbitID.TFA_CLIENT_PARTYSTATUS, VarbitID.TFA_CLIENT_PARTYSLOT,
+            RaidPartyRoster.ARCHIVE_NAMES, RaidPartyRoster.ARCHIVE_MEMBERS);
     }
 
     private List<String> readChambersParty()
@@ -288,6 +309,7 @@ final class RaidGroupMonitor
         TOB,
         TOA,
         COX,
+        TFA,
         BA
     }
 

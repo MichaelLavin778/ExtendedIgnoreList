@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import net.runelite.api.gameval.VarClientID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetType;
 
@@ -13,6 +15,18 @@ final class RaidPartyRoster
     static final int CHAMBERS_ROW_SIZE = 7;
     static final int CHAMBERS_VISIBLE_NAME_OFFSET = 1;
     static final int CHAMBERS_FULL_NAME_OFFSET = 4;
+    static final int[] ARCHIVE_NAMES = {
+        VarClientID.TFA_CLIENT_NAME0, VarClientID.TFA_CLIENT_NAME1,
+        VarClientID.TFA_CLIENT_NAME2, VarClientID.TFA_CLIENT_NAME3,
+        VarClientID.TFA_CLIENT_NAME4, VarClientID.TFA_CLIENT_NAME5,
+        VarClientID.TFA_CLIENT_NAME6, VarClientID.TFA_CLIENT_NAME7
+    };
+    static final int[] ARCHIVE_MEMBERS = {
+        VarbitID.TFA_CLIENT_P0, VarbitID.TFA_CLIENT_P1,
+        VarbitID.TFA_CLIENT_P2, VarbitID.TFA_CLIENT_P3,
+        VarbitID.TFA_CLIENT_P4, VarbitID.TFA_CLIENT_P5,
+        VarbitID.TFA_CLIENT_P6, VarbitID.TFA_CLIENT_P7
+    };
 
     private RaidPartyRoster()
     {
