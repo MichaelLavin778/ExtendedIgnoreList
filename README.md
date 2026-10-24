@@ -10,7 +10,7 @@ Keep a plugin-managed list of ignored players beyond RuneScape's native ignore-l
 - Left-click a row to remove it; right-click to add or edit a note. Extended-list entries do not automatically add players to your native ignore list.
 - Names and aliases are tracked across renames. Notes are saved with the extended list; available Friend Notes are copied into empty notes when adding or importing.
 - Choose **Name A-Z**, **Name Z-A**, **Oldest first**, or **Newest first** from the panel's sort menu.
-- Native ignore additions can sync into the extended list. Syncing removals is optional in plugin settings.
+- Manual native ignore additions sync into the extended list only after the name appears in the native list. Rejected or cancelled additions are not tracked. Syncing removals is optional in plugin settings.
 
 ## Alerting
 

@@ -256,7 +256,7 @@ public class ExtendedIgnoreListPluginBehaviorTest
     }
 
     @Test
-    public void rejectedNativeAddFallbackDoesNotUndoPanelDeletion() throws Exception
+    public void rejectedNativeAddDoesNotUndoPanelDeletion() throws Exception
     {
         setConfigField("deleteConfirmation", false);
         plugin.addIgnoredPlayer("Bob");
@@ -955,19 +955,61 @@ public class ExtendedIgnoreListPluginBehaviorTest
     }
 
     @Test
-    public void rejectedNativeAddStillAddsTypedNameToExtendedList() throws Exception
+    public void rejectedNativeAddDoesNotTrackTypedNames() throws Exception
     {
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[0]);
+        when(client.getIgnoreContainer()).thenReturn(container);
+        MenuEntry menuEntry = mock(MenuEntry.class);
+        when(menuEntry.getOption()).thenReturn("Add Name");
+        when(client.getVarcStrValue(VarClientID.CHATINPUT)).thenReturn(null, "Bob");
+        when(client.getVarcStrValue(VarClientID.LAST_NAMEDIALOG)).thenReturn(null, "Alice");
+        when(client.getVarcStrValue(VarClientID.MESLAYERINPUT)).thenReturn(null, "Charlie");
+
+        plugin.onMenuOptionClicked(new net.runelite.api.events.MenuOptionClicked(menuEntry));
+        for (int tick = 0; tick < 35; tick++)
+        {
+            plugin.onGameTick(new GameTick());
+        }
+
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        assertFalse(sharedValues.containsKey("ignoredPlayers"));
+    }
+
+    @Test
+    public void nativeAddTracksNameOnlyAfterItAppearsInNativeList() throws Exception
+    {
+        @SuppressWarnings("unchecked")
+        NameableContainer<Ignore> container = mock(NameableContainer.class);
+        when(container.getMembers()).thenReturn(new Ignore[0]);
+        when(client.getIgnoreContainer()).thenReturn(container);
         MenuEntry menuEntry = mock(MenuEntry.class);
         when(menuEntry.getOption()).thenReturn("Add Name");
         when(client.getVarcStrValue(VarClientID.CHATINPUT)).thenReturn(null, "Bob");
 
         plugin.onMenuOptionClicked(new net.runelite.api.events.MenuOptionClicked(menuEntry));
-        for (int tick = 0; tick < 30; tick++)
+        for (int tick = 0; tick < 5; tick++)
         {
-            invokePrivateNoArgs(plugin, "syncPendingNativeIgnoreActions");
+            plugin.onGameTick(new GameTick());
         }
+        assertTrue(plugin.getIgnoredPlayers().isEmpty());
+        assertFalse(sharedValues.containsKey("ignoredPlayers"));
 
-        assertNotNull(findPlayer(plugin.getIgnoredPlayers(), "Bob"));
+        Ignore bob = mock(Ignore.class);
+        when(bob.getName()).thenReturn("Bob");
+        when(container.getMembers()).thenReturn(new Ignore[] {bob});
+        plugin.onGameTick(new GameTick());
+        assertPlayerNames("Bob");
+        assertTrue(sharedValues.get("ignoredPlayers").contains("Bob"));
+
+        for (int tick = 0; tick < 35; tick++)
+        {
+            plugin.onGameTick(new GameTick());
+        }
+        assertPlayerNames("Bob");
+        plugin.onSessionOpen(new SessionOpen());
+        assertPlayerNames("Bob");
     }
 
     @Test

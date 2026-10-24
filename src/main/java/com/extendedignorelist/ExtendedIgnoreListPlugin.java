@@ -25,7 +25,6 @@ import net.runelite.api.MenuAction;
 import net.runelite.api.MessageNode;
 import net.runelite.api.NameableContainer;
 import net.runelite.api.gameval.InterfaceID;
-import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.MenuOptionClicked;
@@ -134,13 +133,7 @@ public class ExtendedIgnoreListPlugin extends Plugin
     private int pendingNativeIgnoreRemovalTicks;
     private final Set<String> previousNativeIgnoreNames = new HashSet<>();
     private String nativeIgnoreFingerprint;
-    private final Set<String> nativeIgnoreNamesBeforeAddAttempt = new HashSet<>();
     private final Set<String> nativeIgnoreNamesSyncedDuringAddAttempt = new HashSet<>();
-    private boolean nativeAddObserved;
-    private String pendingNativeAddFallbackName;
-    private String nativeAddDialogBaseline;
-    private String nativeAddMesLayerBaseline;
-    private String nativeAddChatInputBaseline;
     private final RenderCallback drawListener = new RenderCallback()
     {
         @Override
@@ -346,9 +339,6 @@ public class ExtendedIgnoreListPlugin extends Plugin
         }
         pendingNativeIgnoreImportTicks = 0;
         pendingNativeIgnoreRemovalTicks = 0;
-        pendingNativeAddFallbackName = null;
-        nativeAddObserved = false;
-        nativeIgnoreNamesBeforeAddAttempt.clear();
         nativeIgnoreNamesSyncedDuringAddAttempt.clear();
         previousNativeIgnoreNames.clear();
         nativeIgnoreFingerprint = null;
@@ -473,15 +463,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
     {
         if (isNativeAddNameAction(event))
         {
-            nativeIgnoreNamesBeforeAddAttempt.clear();
-            nativeIgnoreNamesBeforeAddAttempt.addAll(getNativeIgnoreCurrentNames());
             nativeIgnoreNamesSyncedDuringAddAttempt.clear();
-            nativeIgnoreNamesSyncedDuringAddAttempt.addAll(nativeIgnoreNamesBeforeAddAttempt);
-            nativeAddObserved = false;
-            pendingNativeAddFallbackName = null;
-            nativeAddDialogBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.LAST_NAMEDIALOG));
-            nativeAddMesLayerBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.MESLAYERINPUT));
-            nativeAddChatInputBaseline = sanitizeCandidateName(client.getVarcStrValue(VarClientID.CHATINPUT));
+            nativeIgnoreNamesSyncedDuringAddAttempt.addAll(getNativeIgnoreCurrentNames());
             pendingNativeIgnoreImportTicks = NATIVE_ACTION_SYNC_TICKS;
         }
 
@@ -1393,19 +1376,8 @@ public class ExtendedIgnoreListPlugin extends Plugin
         boolean changed = false;
         if (pendingNativeIgnoreImportTicks > 0)
         {
-            capturePendingNativeAddNameCandidate();
             changed |= importMissingNativeIgnores(true);
-            if (nativeIgnoreAddDetected())
-            {
-                nativeAddObserved = true;
-            }
             pendingNativeIgnoreImportTicks--;
-
-            if (pendingNativeIgnoreImportTicks == 0 && !nativeAddObserved)
-            {
-                addPendingFallbackNameToExtendedList();
-                changed = true;
-            }
         }
 
         if (pendingNativeIgnoreRemovalTicks > 0 && provideConfig().syncRemoveIgnore())
@@ -1485,66 +1457,6 @@ public class ExtendedIgnoreListPlugin extends Plugin
         }
 
         return names;
-    }
-
-    private boolean nativeIgnoreAddDetected()
-    {
-        Set<String> currentNativeIgnoreNames = getNativeIgnoreCurrentNames();
-        for (String name : currentNativeIgnoreNames)
-        {
-            if (!nativeIgnoreNamesBeforeAddAttempt.contains(name))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private void capturePendingNativeAddNameCandidate()
-    {
-        String mesLayerInput = sanitizeCandidateName(client.getVarcStrValue(VarClientID.MESLAYERINPUT));
-        if (mesLayerInput != null && !mesLayerInput.equals(nativeAddMesLayerBaseline))
-        {
-            pendingNativeAddFallbackName = mesLayerInput;
-        }
-
-        String lastNameDialogInput = sanitizeCandidateName(client.getVarcStrValue(VarClientID.LAST_NAMEDIALOG));
-        if (lastNameDialogInput != null && !lastNameDialogInput.equals(nativeAddDialogBaseline))
-        {
-            pendingNativeAddFallbackName = lastNameDialogInput;
-        }
-
-        String chatInput = sanitizeCandidateName(client.getVarcStrValue(VarClientID.CHATINPUT));
-        if (chatInput != null && !chatInput.equals(nativeAddChatInputBaseline))
-        {
-            pendingNativeAddFallbackName = chatInput;
-        }
-    }
-
-    private void addPendingFallbackNameToExtendedList()
-    {
-        if (pendingNativeAddFallbackName == null
-            || nativeIgnoreNamesSyncedDuringAddAttempt.contains(normalizeName(pendingNativeAddFallbackName)))
-        {
-            return;
-        }
-
-        if (findIgnoredPlayerByName(pendingNativeAddFallbackName) == null)
-        {
-            addIgnoredPlayer(pendingNativeAddFallbackName);
-        }
-    }
-
-    private String sanitizeCandidateName(String input)
-    {
-        if (input == null)
-        {
-            return null;
-        }
-
-        String cleanedInput = Text.removeTags(input).trim();
-        return cleanedInput.isEmpty() ? null : cleanedInput;
     }
 
     private boolean isIgnoredPlayerName(String playerName)
